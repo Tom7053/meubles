@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Furniture for sale — poster</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --blue-900:#16307a;
+    --blue-800:#1d4ed8;
+    --blue-700:#1f5fd6;
+    --blue-100:#dbe6fb;
+    --blue-50:#eff5ff;
+    --ink:#101a2e;
+    --muted:#5b6b82;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--blue-50);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    color:var(--ink);
+  }
+
+  /* ---------- barre d'outils (écran seulement) ---------- */
+  .bar{
+    position:sticky;top:0;z-index:10;
+    background:#fff;border-bottom:1px solid var(--blue-100);
+    padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;
+  }
+  .bar label{font-size:13px;color:var(--muted)}
+  .bar input{
+    flex:1;min-width:240px;padding:9px 12px;font-size:14px;
+    border:1px solid #d8e0ee;border-radius:8px;font-family:inherit;
+  }
+  .bar input:focus{outline:2px solid var(--blue-800);outline-offset:1px;border-color:transparent}
+  .bar button{
+    background:var(--blue-800);color:#fff;border:0;border-radius:8px;
+    padding:10px 18px;font:600 14px 'Inter',sans-serif;cursor:pointer;
+  }
+  .bar button:hover{background:var(--blue-900)}
+  .hint{width:100%;font-size:12.5px;color:var(--muted);margin:0}
+
+  /* ---------- affiche A4 ---------- */
+  .poster{
+    width:210mm;height:297mm;margin:24px auto;background:#fff;
+    display:flex;flex-direction:column;
+    box-shadow:0 10px 40px rgba(22,48,122,.16);
+    overflow:hidden;
+  }
+  .top{padding:20mm 18mm 0;flex:1;display:flex;flex-direction:column}
+
+  .eyebrow{
+    font-size:13pt;color:var(--blue-800);margin:0 0 10mm;
+    display:flex;align-items:center;gap:10px;
+  }
+  .eyebrow::before{
+    content:"";display:block;width:18mm;height:3px;background:var(--blue-800);
+  }
+
+  h1{
+    font-family:'Bricolage Grotesque','Segoe UI',sans-serif;
+    font-weight:800;font-size:58pt;line-height:.94;letter-spacing:-.02em;
+    margin:0;color:var(--blue-900);
+  }
+  .lede{
+    margin:8mm 0 0;font-size:14pt;line-height:1.5;max-width:150mm;color:#2b3a52;
+  }
+
+  .list{margin:12mm 0 0;padding:0;list-style:none;border-top:2px solid var(--blue-100)}
+  .list li{
+    display:flex;align-items:baseline;gap:6px;
+    padding:3.6mm 0;border-bottom:1px solid var(--blue-100);
+    font-size:14.5pt;
+  }
+  .list .name{font-weight:500}
+  .list .dots{
+    flex:1;border-bottom:1.5px dotted #b9c9e6;transform:translateY(-4px);
+  }
+  .list .price{font-weight:600;color:var(--blue-800);white-space:nowrap}
+  .more{margin:5mm 0 0;font-size:12.5pt;color:var(--muted)}
+
+  /* ---------- bandeau bleu ---------- */
+  .band{
+    background:var(--blue-900);color:#fff;padding:12mm 18mm;
+    display:flex;gap:12mm;align-items:center;
+  }
+  .qr-card{
+    background:#fff;padding:4mm;border-radius:4mm;line-height:0;flex:none;
+  }
+  .qr-card canvas,.qr-card img{display:block;width:38mm;height:38mm}
+  .qr-fallback{
+    width:38mm;height:38mm;display:flex;align-items:center;justify-content:center;
+    text-align:center;font-size:9pt;color:var(--muted);line-height:1.35;padding:4mm;
+  }
+  .band h2{
+    font-family:'Bricolage Grotesque',sans-serif;font-weight:700;
+    font-size:22pt;line-height:1.15;margin:0 0 4mm;letter-spacing:-.01em;
+  }
+  .band p{margin:0 0 2.5mm;font-size:12.5pt;color:#cfdcff;line-height:1.45}
+  .pay{display:flex;gap:8px;flex-wrap:wrap;margin-top:5mm}
+  .pay span{
+    border:1.5px solid rgba(255,255,255,.45);border-radius:99px;
+    padding:2mm 5mm;font-size:11.5pt;font-weight:500;
+  }
+
+  [contenteditable]{outline:none}
+  @media screen{
+    [contenteditable]:hover{background:var(--blue-50);border-radius:3px}
+    .band [contenteditable]:hover{background:rgba(255,255,255,.12)}
+  }
+
+  @page{size:A4;margin:0}
+  @media print{
+    body{background:#fff}
+    .bar{display:none}
+    .poster{margin:0;box-shadow:none;width:210mm;height:297mm}
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .poster,.band{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <label for="url">Lien vers ta liste</label>
+  <input id="url" type="url" value="https://tom7053.github.io/meubles/" placeholder="https://…">
+  <button onclick="window.print()">Imprimer / Enregistrer en PDF</button>
+  <p class="hint">Le QR code se met à jour tout seul. Tous les textes de l’affiche sont modifiables : clique dessus et tape. Ensuite imprime en A4, sans marges, avec les couleurs d’arrière-plan activées.</p>
+</div>
+
+<div class="poster">
+  <div class="top">
+    <p class="eyebrow"><span contenteditable>My internship ends on 20 November</span></p>
+
+    <h1 contenteditable>Everything<br>must go</h1>
+
+    <p class="lede" contenteditable>I am leaving Odense on 20 November and my whole flat is for sale. Everything is in good shape and the prices are low, because it all has to find a new home before I fly out.</p>
+
+    <ul class="list">
+      <li><span class="name" contenteditable>Oak desk, 120 × 60 cm</span><span class="dots"></span><span class="price" contenteditable>300 kr</span></li>
+      <li><span class="name" contenteditable>Double bed with mattress</span><span class="dots"></span><span class="price" contenteditable>600 kr</span></li>
+      <li><span class="name" contenteditable>Bookshelf, white</span><span class="dots"></span><span class="price" contenteditable>150 kr</span></li>
+      <li><span class="name" contenteditable>Desk chair</span><span class="dots"></span><span class="price" contenteditable>100 kr</span></li>
+      <li><span class="name" contenteditable>Floor lamp</span><span class="dots"></span><span class="price" contenteditable>50 kr</span></li>
+    </ul>
+
+    <p class="more" contenteditable>Plus a kitchen table, two chairs, and a few smaller things. Low prices, and I would rather sell it than move it.</p>
+  </div>
+
+  <div class="band">
+    <div class="qr-card" id="qr">
+      <div class="qr-fallback">Paste your link in the field above to generate the code</div>
+    </div>
+    <div>
+      <h2 contenteditable>Scan to see the full list<br>and book a viewing</h2>
+      <p contenteditable>Pickup at Alfavej 510, 13</p>
+      <p contenteditable>I will message you to confirm the time</p>
+      <div class="pay">
+        <span contenteditable>MobilePay</span>
+        <span contenteditable>Revolut</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var box = document.getElementById('qr');
+  var input = document.getElementById('url');
+
+  function draw(value){
+    box.innerHTML = '';
+    if(!value){
+      box.innerHTML = '<div class="qr-fallback">Paste your link in the field above to generate the code</div>';
+      return;
+    }
+    if(typeof QRCode === 'undefined'){
+      box.innerHTML = '<div class="qr-fallback">Connect to the internet and reload to generate the code</div>';
+      return;
+    }
+    new QRCode(box, {
+      text: value,
+      width: 320,
+      height: 320,
+      colorDark: '#16307a',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  input.addEventListener('input', function(){ draw(input.value.trim()); });
+  draw(input.value.trim());
+</script>
+
+</body>
+</html>
