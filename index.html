@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Furniture for sale</title>
-<meta name="description" content="Furniture for sale after my internship. Book a viewing.">
+<meta name="description" content="Furniture for sale before 20 November. Book a viewing.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,15 +17,19 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <!-- =====================================================================
-     À REMPLIR : Supabase > Project Settings > Data API
+     LES DEUX SEULES LIGNES A REMPLIR
+     Supabase > Project Settings > Data API
+     SUPABASE_URL = "Project URL", la racine et RIEN d'autre :
+       correct   https://abcdefgh.supabase.co
+       incorrect https://abcdefgh.supabase.co/rest/v1
      Ces deux valeurs sont publiques par conception, elles peuvent rester
-     dans un dépôt public. Ce sont les règles RLS de schema.sql qui
-     protègent les données.
+     dans un depot public. Ce sont les regles RLS de schema.sql qui
+     protegent les donnees. Ne mets JAMAIS la cle service_role ici.
      ===================================================================== -->
 <script>
   window.CONFIG = {
-    SUPABASE_URL: "https://dmjpjbgnghwzciwnciyb.supabase.co",
-    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtanBqYmduZ2h3emNpd25jaXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNjQwMjksImV4cCI6MjEwNDk0MDAyOX0.PHu6YcCQLJTx6T-c_wGdQmnzPb9YoFC80qiZ9bFjDgk'
+    SUPABASE_URL: 'https://dmjpjbgnghwzciwnciyb.supabase.co',
+    SUPABASE_ANON_KEY: 'COLLE-ICI-TA-CLE-ANON'
   };
 </script>
 
@@ -38,6 +42,1261 @@
 <body class="bg-white text-slate-900">
   <div id="root"></div>
   <noscript>This page needs JavaScript to show the furniture list.</noscript>
-  <script type="text/babel" data-presets="react" src="app.jsx"></script>
+
+<script type="text/babel" data-presets="react">
+/* =====================================================================
+   Vente de meubles — application complète (React sans build)
+   Boutique en anglais, espace vendeur en français, données sur Supabase.
+   ===================================================================== */
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+const configured =
+  window.CONFIG.SUPABASE_URL.indexOf('TON-PROJET') === -1 &&
+  window.CONFIG.SUPABASE_ANON_KEY.indexOf('COLLE-ICI') === -1;
+
+// On accepte aussi l'URL copiée avec /rest/v1 au bout : la bibliothèque
+// ajoute les chemins toute seule et n'accepte que la racine du projet.
+const SUPABASE_URL = window.CONFIG.SUPABASE_URL
+  .trim()
+  .replace(/\/(rest|auth|storage|realtime)\/v1\/?$/, '')
+  .replace(/\/+$/, '');
+
+const sb = configured
+  ? window.supabase.createClient(SUPABASE_URL, window.CONFIG.SUPABASE_ANON_KEY.trim())
+  : null;
+
+console.log('[meubles] fichier unique — Supabase :', SUPABASE_URL);
+
+const DAYS_FR = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const LINK_PRESETS = ['Facebook Marketplace', 'DBA', 'Leboncoin', 'Vinted'];
+const FALLBACK_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+
+const DEFAULT_SETTINGS = {
+  id: 1,
+  address: 'Alfavej 510, 13',
+  payment: 'MobilePay or Revolut',
+  weekdays: [true, true, true, true, true, true, false],
+  slots: FALLBACK_SLOTS,
+  blocked: [],
+};
+
+/* ------------------------------ dates ------------------------------ */
+const pad = (n) => String(n).padStart(2, '0');
+const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const todayKey = () => toKey(new Date());
+
+function fmtDate(key, locale) {
+  if (!key) return '';
+  const [y, m, d] = String(key).slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(locale, {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+}
+
+function monthDays(year, month) {
+  const offset = (new Date(year, month, 1).getDay() + 6) % 7; // lundi = 0
+  const total = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < offset; i++) cells.push(null);
+  for (let d = 1; d <= total; d++) cells.push(new Date(year, month, d));
+  return cells;
+}
+
+/* ------------------------------ image ------------------------------ */
+function resizeImage(file, max = 900, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('image'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ------------------------------ icônes ----------------------------- */
+const PATHS = {
+  calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z',
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+  check: 'M20 6 9 17l-5-5',
+  x: 'M18 6 6 18M6 6l12 12',
+  external: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3',
+  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
+  left: 'm15 18-6-6 6-6',
+  right: 'm9 18 6-6-6-6',
+  plus: 'M12 5v14M5 12h14',
+  trash: 'M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+  pencil: 'M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z',
+  image: 'M5 5h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM4 16l5-5 4 4 2-2 5 5',
+  pin: 'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  lock: 'M5 11h14v10H5zM8 11V7a4 4 0 0 1 8 0v4',
+  refresh: 'M21 12a9 9 0 1 1-3-6.7M21 3v6h-6',
+  store: 'M4 9h16v11H4zM4 9l1.5-5h13L20 9M9 20v-6h6v6',
+  logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+};
+
+function Icon({ name, className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+         strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d={PATHS[name]} />
+    </svg>
+  );
+}
+
+/* ------------------- sélecteurs partagés (admin) -------------------- */
+function WeekdayPicker({ value, onChange, compact }) {
+  const days = value || DEFAULT_SETTINGS.weekdays;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {DAYS_FR.map((d, i) => (
+        <button key={d} type="button"
+                onClick={() => { const w = [...days]; w[i] = !w[i]; onChange(w); }}
+                className={`rounded-lg text-sm border ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} ${
+                  days[i] ? 'bg-blue-700 border-blue-700 text-white'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+          {compact ? d.slice(0, 3) : d}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SlotEditor({ value, onChange, pushToast, compact }) {
+  const [draft, setDraft] = useState('');
+  const slots = value || [];
+
+  const add = () => {
+    if (!/^\d{2}:\d{2}$/.test(draft)) return pushToast('Choisis une heure valide.');
+    if (slots.includes(draft)) return pushToast('Ce créneau existe déjà.');
+    onChange([...slots, draft].sort());
+    setDraft('');
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {slots.map((s) => (
+          <span key={s} className={`inline-flex items-center gap-2 border border-blue-200 bg-blue-50 text-blue-800 rounded-lg text-sm ${compact ? 'px-2.5 py-1' : 'px-3 py-1.5'}`}>
+            {s}
+            <button type="button" onClick={() => onChange(slots.filter((x) => x !== s))}
+                    className="text-blue-400 hover:text-red-600" aria-label={`Retirer ${s}`}>
+              <Icon name="x" className="w-3.5 h-3.5" />
+            </button>
+          </span>
+        ))}
+        {slots.length === 0 && <span className="text-sm text-slate-400">Aucun créneau : personne ne peut réserver.</span>}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <input type="time" value={draft} onChange={(e) => setDraft(e.target.value)}
+               className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" />
+        <button type="button" onClick={add}
+                className="inline-flex items-center gap-1.5 border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm hover:border-blue-400 hover:text-blue-700">
+          <Icon name="plus" className="w-4 h-4" /> Ajouter le créneau
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---- horaires réellement applicables à un meuble donné ------------- */
+function scheduleFor(item, settings) {
+  const custom = item.custom_schedule;
+  const weekdays = (custom && Array.isArray(item.weekdays) ? item.weekdays : settings.weekdays) || DEFAULT_SETTINGS.weekdays;
+  const slots = (custom && Array.isArray(item.slots) && item.slots.length ? item.slots : settings.slots) || FALLBACK_SLOTS;
+  const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
+  const until = item.available_to ? String(item.available_to).slice(0, 10) : null;
+  const start = from && from > todayKey() ? from : todayKey();
+  return { weekdays, slots, from, until, start, closed: new Set(settings.blocked || []) };
+}
+
+/* =================================================================== */
+
+function App() {
+  const [route, setRoute] = useState('shop');
+  const [session, setSession] = useState(null);
+  const [items, setItems] = useState([]);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [busy, setBusy] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [ready, setReady] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const pushToast = useCallback((text, tone) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((t) => [...t, { id, text, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000);
+  }, []);
+
+  /* ---- session ---- */
+  useEffect(() => {
+    if (!sb) return;
+    sb.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  /* ---- données publiques ---- */
+  const loadPublic = useCallback(async () => {
+    if (!sb) return setReady(true);
+    const [it, st, bs] = await Promise.all([
+      sb.from('items').select('*').order('created_at', { ascending: false }),
+      sb.from('settings').select('*').eq('id', 1).maybeSingle(),
+      sb.from('busy_slots').select('day, slot'),
+    ]);
+    if (it.data) setItems(it.data);
+    if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
+    if (bs.data) setBusy(bs.data);
+    setReady(true);
+  }, []);
+
+  const loadBookings = useCallback(async () => {
+    if (!sb || !session) return;
+    const { data } = await sb.from('bookings').select('*').order('day').order('slot');
+    if (data) setBookings(data);
+  }, [session]);
+
+  useEffect(() => { loadPublic(); }, [loadPublic]);
+  useEffect(() => { loadBookings(); }, [loadBookings]);
+
+  /* ---- alerte temps réel sur les nouveaux rendez-vous ---- */
+  useEffect(() => {
+    if (!sb || !session) return;
+    const channel = sb
+      .channel('bookings-feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) => {
+        const b = payload.new;
+        setBookings((prev) => (prev.some((x) => x.id === b.id) ? prev : [...prev, b]));
+        setBusy((prev) => [...prev, { day: b.day, slot: b.slot }]);
+        pushToast(`Nouveau rendez-vous — ${b.first_name}, ${fmtDate(b.day, 'fr-FR')} à ${b.slot}`, 'new');
+      })
+      .subscribe();
+    return () => { sb.removeChannel(channel); };
+  }, [session, pushToast]);
+
+  const newCount = bookings.filter((b) => b.status === 'new').length;
+
+  if (!configured) {
+    return (
+      <div className="max-w-xl mx-auto px-5 py-24">
+        <h1 className="display text-2xl font-bold">Configuration à terminer</h1>
+        <p className="mt-3 text-slate-600 leading-relaxed">
+          Ouvre <code className="bg-blue-50 px-1.5 py-0.5 rounded">index.html</code> et remplace
+          les deux valeurs de <code className="bg-blue-50 px-1.5 py-0.5 rounded">window.CONFIG</code>{' '}
+          par l’URL et la clé anon de ton projet Supabase, puis recharge la page.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      {route === 'shop' ? (
+        <Shop
+          items={items}
+          settings={settings}
+          busy={busy}
+          ready={ready}
+          onAdmin={() => setRoute('admin')}
+          onBooked={(row) => setBusy((prev) => [...prev, { day: row.day, slot: row.slot }])}
+        />
+      ) : (
+        <Admin
+          session={session}
+          items={items}
+          setItems={setItems}
+          bookings={bookings}
+          setBookings={setBookings}
+          settings={settings}
+          setSettings={setSettings}
+          newCount={newCount}
+          reload={() => { loadPublic(); loadBookings(); }}
+          pushToast={pushToast}
+          onShop={() => setRoute('shop')}
+        />
+      )}
+
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">
+        {toasts.map((t) => (
+          <div key={t.id}
+               className={`rounded-lg px-4 py-3 text-sm shadow-lg border flex items-start gap-2 ${
+                 t.tone === 'new' ? 'bg-blue-700 text-white border-blue-800'
+                                  : 'bg-white text-slate-800 border-slate-200'}`}>
+            <Icon name="bell" className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{t.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================== BOUTIQUE (EN) ========================= */
+
+function Shop({ items, settings, busy, ready, onAdmin, onBooked }) {
+  const [booking, setBooking] = useState(null);
+  const available = items.filter((i) => i.status !== 'sold');
+
+  return (
+    <div>
+      <header className="bg-blue-800 text-white">
+        <div className="max-w-5xl mx-auto px-5 py-12 sm:py-16">
+          <p className="text-blue-200 text-sm mb-3">Everything must go before 20 November</p>
+          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight max-w-2xl">
+            My furniture is looking for a new home
+          </h1>
+          <p className="mt-4 text-blue-100 max-w-xl leading-relaxed">
+            My internship ends on 20 November and I am leaving, so everything below has to go
+            and prices are low. Pick a time that works for you and leave your first name and
+            phone number — I will send you a message to confirm the appointment.
+          </p>
+          <p className="mt-3 text-blue-200 max-w-xl leading-relaxed">
+            Pickup only. Payment by MobilePay or Revolut.
+          </p>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-5 py-10">
+        {!ready ? (
+          <p className="text-slate-500">Loading…</p>
+        ) : available.length === 0 ? (
+          <div className="border border-dashed border-blue-200 rounded-xl bg-blue-50 px-6 py-14 text-center">
+            <h2 className="display font-bold text-xl mb-1">Nothing listed right now</h2>
+            <p className="text-slate-600">Check back soon — items are added as I pack up.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-blue-100 border-t border-blue-100">
+            {available.map((item) => (
+              <ItemRow key={item.id} item={item} onBook={() => setBooking(item)} />
+            ))}
+          </ul>
+        )}
+
+        <PickupMap address={settings.address} />
+      </main>
+
+      <footer className="border-t border-slate-200 mt-8">
+        <div className="max-w-5xl mx-auto px-5 py-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+          <span>Pickup only. {settings.payment}.</span>
+          <button onClick={onAdmin}
+                  className="inline-flex items-center gap-1.5 text-blue-700 hover:text-blue-900 hover:underline">
+            <Icon name="lock" className="w-3.5 h-3.5" /> Seller access
+          </button>
+        </div>
+      </footer>
+
+      {booking && (
+        <BookingDialog
+          item={booking}
+          busy={busy}
+          settings={settings}
+          onClose={() => setBooking(null)}
+          onConfirm={onBooked}
+        />
+      )}
+    </div>
+  );
+}
+
+function ItemRow({ item, onBook }) {
+  const links = Array.isArray(item.links) ? item.links : [];
+  return (
+    <li className="py-7 grid sm:grid-cols-[260px_1fr] gap-6 items-start">
+      <div className="rounded-lg overflow-hidden bg-blue-50 border border-blue-100 aspect-[4/3] flex items-center justify-center">
+        {item.image
+          ? <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+          : <span className="text-blue-300 text-sm">No photo</span>}
+      </div>
+
+      <div>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <h2 className="display font-bold text-2xl">{item.title}</h2>
+          <span className="text-xl font-semibold text-blue-700">{item.price || 'Free'}</span>
+        </div>
+
+        {item.condition && <p className="mt-1 text-sm text-slate-500">Condition: {item.condition}</p>}
+
+        {item.available_from && String(item.available_from).slice(0, 10) > todayKey() && (
+          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-full px-3 py-1">
+            <Icon name="calendar" className="w-3.5 h-3.5" />
+            Available from {fmtDate(item.available_from, 'en-GB')}
+          </p>
+        )}
+
+        {item.description && (
+          <p className="mt-3 text-slate-700 leading-relaxed max-w-prose whitespace-pre-line">
+            {item.description}
+          </p>
+        )}
+
+        {links.length > 0 && (
+          <p className="mt-3 text-sm text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Also listed on</span>
+            {links.map((l, i) => (
+              <a key={i} href={l.url} target="_blank" rel="noreferrer"
+                 className="inline-flex items-center gap-1 text-blue-700 hover:underline">
+                {l.label} <Icon name="external" className="w-3.5 h-3.5" />
+              </a>
+            ))}
+          </p>
+        )}
+
+        <button onClick={onBook}
+                className="mt-5 inline-flex items-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-5 py-2.5">
+          <Icon name="calendar" className="w-4 h-4" /> Book a viewing
+        </button>
+      </div>
+    </li>
+  );
+}
+
+function PickupMap({ address }) {
+  if (!address) return null;
+  const q = encodeURIComponent(address);
+  return (
+    <section className="mt-12 pt-10 border-t border-blue-100">
+      <h2 className="display font-bold text-2xl">Where to pick up</h2>
+      <p className="mt-1 text-slate-600 inline-flex items-center gap-2">
+        <Icon name="pin" className="w-4 h-4 text-blue-700" /> {address}
+      </p>
+      <div className="mt-4 rounded-xl overflow-hidden border border-blue-100 bg-blue-50 h-72">
+        <iframe title="Pickup location" className="w-full h-full" style={{ border: 0 }} loading="lazy"
+                src={`https://maps.google.com/maps?q=${q}&z=15&output=embed`} />
+      </div>
+      <a href={`https://www.google.com/maps/search/?api=1&query=${q}`} target="_blank" rel="noreferrer"
+         className="mt-3 inline-flex items-center gap-1.5 text-sm text-blue-700 hover:underline">
+        Open in Google Maps <Icon name="external" className="w-3.5 h-3.5" />
+      </a>
+    </section>
+  );
+}
+
+function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
+  const plan = scheduleFor(item, settings);
+  const opening = (() => {
+    const [y, m] = plan.start.split('-').map(Number);
+    return { y, m: m - 1 };
+  })();
+  const [cursor, setCursor] = useState(opening);
+  const [day, setDay] = useState(null);
+  const [slot, setSlot] = useState(null);
+  const [firstName, setFirstName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(null);
+
+  const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
+  const slots = plan.slots;
+  const cells = monthDays(cursor.y, cursor.m);
+  const isOpen = (d, k) =>
+    plan.weekdays[(d.getDay() + 6) % 7] &&
+    !plan.closed.has(k) &&
+    k >= plan.start &&
+    (!plan.until || k <= plan.until);
+
+  const submit = async () => {
+    if (!day || !slot) return setError('Pick a day and a time first.');
+    if (firstName.trim().length < 2) return setError('Please enter your first name.');
+    if (phone.replace(/\D/g, '').length < 6) return setError('Please enter a valid phone number.');
+    if (taken.has(`${day} ${slot}`)) return setError('That slot was just taken, please pick another one.');
+    setError('');
+    setSending(true);
+    const row = {
+      item_id: item.id,
+      item_title: item.title,
+      first_name: firstName.trim(),
+      phone: phone.trim(),
+      day,
+      slot,
+      status: 'new',
+    };
+    const { error: err } = await sb.from('bookings').insert(row);
+    setSending(false);
+    if (err) return setError('Something went wrong. Please try again.');
+    onConfirm(row);
+    setDone(row);
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 bg-slate-900 bg-opacity-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto"
+         onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-lg my-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+          <div>
+            <h3 className="display font-bold text-xl">{done ? 'You’re booked' : 'Book a viewing'}</h3>
+            <p className="text-sm text-slate-500 mt-0.5">{item.title}</p>
+            {!done && (plan.from > todayKey() || plan.until) && (
+              <p className="text-sm text-blue-700 mt-1">
+                {plan.from > todayKey() && `Available from ${fmtDate(plan.from, 'en-GB')}`}
+                {plan.from > todayKey() && plan.until && ' — '}
+                {plan.until && `last day ${fmtDate(plan.until, 'en-GB')}`}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1" aria-label="Close">
+            <Icon name="x" className="w-5 h-5" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="px-6 py-8 text-center">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-4">
+              <Icon name="check" className="w-6 h-6" />
+            </div>
+            <p className="text-slate-800 leading-relaxed">
+              Thanks {done.first_name} — I will send you a message to confirm your visit on{' '}
+              <strong>{fmtDate(done.day, 'en-GB')}</strong> at <strong>{done.slot}</strong>.
+            </p>
+            <p className="text-sm text-slate-500 mt-2">I will write to you on {done.phone}.</p>
+            <button onClick={onClose} className="mt-6 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-5 py-2.5">
+              Back to the list
+            </button>
+          </div>
+        ) : (
+          <div className="px-6 py-5">
+            <div className="flex items-center justify-between mb-3">
+              <button onClick={() => setCursor(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
+                      className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Previous month">
+                <Icon name="left" className="w-5 h-5" />
+              </button>
+              <span className="font-semibold">
+                {new Date(cursor.y, cursor.m, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+              </span>
+              <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
+                      className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Next month">
+                <Icon name="right" className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {cells.map((d, i) => {
+                if (!d) return <div key={i} />;
+                const k = toKey(d);
+                const off = !isOpen(d, k);
+                const on = k === day;
+                return (
+                  <button key={i} disabled={off}
+                          onClick={() => { setDay(k); setSlot(null); }}
+                          className={`h-10 rounded-lg text-sm ${
+                            off ? 'text-slate-300 cursor-not-allowed'
+                                : on ? 'bg-blue-700 text-white font-semibold'
+                                     : 'hover:bg-blue-50 text-slate-700'}`}>
+                    {d.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            {day && (
+              <div className="mt-5">
+                <p className="text-sm text-slate-500 mb-2">Times on {fmtDate(day, 'en-GB')}</p>
+                <div className="flex flex-wrap gap-2">
+                  {slots.map((s) => {
+                    const full = taken.has(`${day} ${s}`);
+                    const on = slot === s;
+                    return (
+                      <button key={s} disabled={full} onClick={() => setSlot(s)}
+                              className={`px-3 py-2 rounded-lg text-sm border ${
+                                full ? 'border-slate-100 text-slate-300 line-through cursor-not-allowed'
+                                     : on ? 'bg-blue-700 border-blue-700 text-white'
+                                          : 'border-blue-200 text-blue-800 hover:bg-blue-50'}`}>
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 grid sm:grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-sm text-slate-600">First name</span>
+                <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Marie" />
+              </label>
+              <label className="block">
+                <span className="text-sm text-slate-600">Phone number</span>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="+45 12 34 56 78" />
+              </label>
+            </div>
+
+            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+            <button onClick={submit} disabled={sending}
+                    className="mt-5 w-full font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-3">
+              {sending ? 'Booking…' : 'Confirm booking'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ ADMIN (FR) =========================== */
+
+function Admin({ session, items, setItems, bookings, setBookings, settings, setSettings,
+                 newCount, reload, pushToast, onShop }) {
+  const [tab, setTab] = useState('annonces');
+
+  if (!session) return <Login onShop={onShop} />;
+
+  return (
+    <div>
+      <header className="border-b border-slate-200">
+        <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
+          <h1 className="display font-bold text-lg">Gestion des meubles</h1>
+          <div className="flex items-center gap-2">
+            <button onClick={reload} title="Actualiser"
+                    className="p-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700">
+              <Icon name="refresh" className="w-4 h-4" />
+            </button>
+            <button onClick={onShop} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 px-2 py-2">
+              <Icon name="store" className="w-4 h-4" /> Boutique
+            </button>
+            <button onClick={() => sb.auth.signOut()} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 px-2 py-2">
+              <Icon name="logout" className="w-4 h-4" /> Déconnexion
+            </button>
+          </div>
+        </div>
+        <div className="max-w-5xl mx-auto px-5 flex gap-1">
+          {[['annonces', 'Annonces', items.filter((i) => i.status !== 'sold').length],
+            ['rdv', 'Rendez-vous', newCount],
+            ['planning', 'Planning', 0]].map(([id, label, count]) => (
+            <button key={id} onClick={() => setTab(id)}
+                    className={`px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-2 ${
+                      tab === id ? 'border-blue-700 text-blue-800'
+                                 : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+              {label}
+              {count > 0 && (
+                <span className={`rounded-full px-2 py-0.5 text-xs ${
+                  id === 'rdv' ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-700'}`}>{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-5 py-8">
+        {tab === 'annonces' && <ItemsPanel items={items} setItems={setItems} pushToast={pushToast} />}
+        {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
+        {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
+      </main>
+    </div>
+  );
+}
+
+function authErrorMessage(err) {
+  const m = String((err && err.message) || '').toLowerCase();
+  if (m.includes('email not confirmed'))
+    return 'Le compte existe mais n’est pas confirmé. Dans Supabase : Authentication > Users, ouvre l’utilisateur et confirme-le, ou supprime-le et recrée-le en cochant « Auto Confirm User ».';
+  if (m.includes('invalid login credentials'))
+    return 'E-mail ou mot de passe incorrect. Attention : ce n’est pas le mot de passe de la base de données, mais celui du compte créé dans Authentication > Users.';
+  if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed'))
+    return 'Supabase est injoignable. Vérifie l’URL du projet dans index.html.';
+  if (m.includes('api key') || m.includes('apikey') || m.includes('jwt'))
+    return 'Clé anon invalide. Recopie-la depuis Project Settings > Data API.';
+  if (m.includes('rate') || m.includes('too many'))
+    return 'Trop de tentatives. Attends une minute avant de réessayer.';
+  if (m.includes('disabled') || m.includes('not enabled'))
+    return 'La connexion par e-mail est désactivée. Active-la dans Authentication > Sign In / Providers > Email.';
+  return 'Connexion impossible.';
+}
+
+function Login({ onShop }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [detail, setDetail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setError('');
+    setDetail('');
+    setBusy(true);
+    const { error: err } = await sb.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    setBusy(false);
+    if (err) {
+      setError(authErrorMessage(err));
+      setDetail(err.message || '');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-5">
+      <div className="w-full max-w-sm">
+        <h1 className="display font-bold text-2xl mb-1">Espace vendeur</h1>
+        <p className="text-slate-500 text-sm mb-6">
+          Connecte-toi pour gérer les annonces, les rendez-vous et le planning.
+        </p>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+               autoComplete="username"
+               className="w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Adresse e-mail" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+               onKeyDown={(e) => e.key === 'Enter' && submit()} autoComplete="current-password"
+               className="mt-3 w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Mot de passe" />
+        {error && (
+          <div className="mt-3 border border-red-200 bg-red-50 rounded-lg px-3 py-2.5">
+            <p className="text-sm text-red-700 leading-relaxed">{error}</p>
+            {detail && <p className="mt-1 text-xs text-red-400 break-words">Message technique : {detail}</p>}
+          </div>
+        )}
+        <button onClick={submit} disabled={busy}
+                className="mt-4 w-full font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-2.5">
+          {busy ? 'Connexion…' : 'Se connecter'}
+        </button>
+        <button onClick={onShop} className="mt-4 w-full text-sm text-slate-500 hover:text-blue-700">
+          Retour à la boutique
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const emptyForm = {
+  id: null, title: '', price: '', condition: '', description: '',
+  links: [], image: null, status: 'available',
+  available_from: '', available_to: '', custom_schedule: false, weekdays: null, slots: null,
+};
+
+function ItemsPanel({ items, setItems, pushToast }) {
+  const [form, setForm] = useState(emptyForm);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    if (!form.title.trim()) return pushToast('Il manque le titre de l’annonce.');
+    setBusy(true);
+    const payload = {
+      title: form.title.trim(),
+      price: form.price.trim(),
+      condition: form.condition.trim(),
+      description: form.description.trim(),
+      links: (form.links || []).filter((l) => l.label.trim() && l.url.trim()),
+      image: form.image,
+      status: form.status || 'available',
+      available_from: form.available_from || null,
+      available_to: form.available_to || null,
+      custom_schedule: !!form.custom_schedule,
+      weekdays: form.custom_schedule ? (form.weekdays || DEFAULT_SETTINGS.weekdays) : null,
+      slots: form.custom_schedule ? (form.slots || DEFAULT_SETTINGS.slots) : null,
+    };
+    let res;
+    if (form.id) res = await sb.from('items').update(payload).eq('id', form.id).select().single();
+    else res = await sb.from('items').insert(payload).select().single();
+    setBusy(false);
+    if (res.error) return pushToast('Enregistrement impossible, réessaie.');
+    setItems(form.id ? items.map((i) => (i.id === form.id ? res.data : i)) : [res.data, ...items]);
+    setOpen(false);
+    setForm(emptyForm);
+    pushToast(form.id ? 'Annonce mise à jour.' : 'Annonce publiée.');
+  };
+
+  const remove = async (item) => {
+    if (!window.confirm(`Supprimer « ${item.title} » ? Cette action est définitive.`)) return;
+    const { error } = await sb.from('items').delete().eq('id', item.id);
+    if (error) return pushToast('Suppression impossible.');
+    setItems(items.filter((i) => i.id !== item.id));
+    pushToast('Annonce supprimée.');
+  };
+
+  const toggleSold = async (item) => {
+    const status = item.status === 'sold' ? 'available' : 'sold';
+    const { error } = await sb.from('items').update({ status }).eq('id', item.id);
+    if (error) return pushToast('Mise à jour impossible.');
+    setItems(items.map((i) => (i.id === item.id ? { ...i, status } : i)));
+    pushToast(status === 'sold' ? 'Marquée comme vendue : retirée de la boutique.' : 'Remise en vente.');
+  };
+
+  const onFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try { set('image', await resizeImage(file)); }
+    catch { pushToast('Photo illisible, essaie une autre image.'); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <p className="text-slate-500 text-sm">{items.length} meuble{items.length > 1 ? 's' : ''} enregistré{items.length > 1 ? 's' : ''}</p>
+        <button onClick={() => { setForm(emptyForm); setOpen(true); }}
+                className="inline-flex items-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-4 py-2.5 text-sm">
+          <Icon name="plus" className="w-4 h-4" /> Ajouter un meuble
+        </button>
+      </div>
+
+      {open && (
+        <div className="border border-blue-200 rounded-xl bg-blue-50 p-5 mb-8">
+          <h2 className="display font-bold text-lg mb-4">{form.id ? 'Modifier l’annonce' : 'Nouvelle annonce'}</h2>
+
+          <div className="grid sm:grid-cols-3 gap-3">
+            <label className="block sm:col-span-2">
+              <span className="text-sm text-slate-600">Titre</span>
+              <input value={form.title} onChange={(e) => set('title', e.target.value)}
+                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Bureau en chêne" />
+            </label>
+            <label className="block">
+              <span className="text-sm text-slate-600">Prix</span>
+              <input value={form.price} onChange={(e) => set('price', e.target.value)}
+                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="450 kr" />
+            </label>
+          </div>
+
+          <label className="block mt-3">
+            <span className="text-sm text-slate-600">État (affiché en anglais)</span>
+            <input value={form.condition} onChange={(e) => set('condition', e.target.value)}
+                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Very good" />
+          </label>
+
+          <label className="block mt-3">
+            <span className="text-sm text-slate-600">Description (affichée en anglais)</span>
+            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3}
+                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                      placeholder="Solid oak desk, 120 × 60 cm. Two drawers, one small scratch on the left side." />
+          </label>
+
+          <div className="mt-4">
+            <span className="text-sm text-slate-600">Photo</span>
+            <div className="mt-1 flex items-center gap-3">
+              <button onClick={() => fileRef.current && fileRef.current.click()}
+                      className="inline-flex items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm hover:border-blue-400">
+                <Icon name="image" className="w-4 h-4 text-blue-700" /> Choisir une image
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
+              {form.image && (
+                <div className="flex items-center gap-2">
+                  <img src={form.image} alt="" className="w-16 h-12 object-cover rounded border border-slate-200" />
+                  <button onClick={() => set('image', null)} className="text-sm text-slate-500 hover:text-red-600">Retirer</button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-blue-200 pt-4">
+            <span className="font-semibold text-sm">Disponibilité de ce meuble</span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Laisse vide pour suivre le planning général. Utile quand tu peux te séparer
+              de la télé tout de suite mais pas du lit avant ton départ.
+            </p>
+
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-sm text-slate-600">Visible à partir du</span>
+                <input type="date" value={form.available_from || ''}
+                       onChange={(e) => set('available_from', e.target.value)}
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
+              </label>
+              <label className="block">
+                <span className="text-sm text-slate-600">Dernier jour possible</span>
+                <input type="date" value={form.available_to || ''}
+                       onChange={(e) => set('available_to', e.target.value)}
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
+              </label>
+            </div>
+
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={!!form.custom_schedule}
+                     onChange={(e) => setForm((f) => ({
+                       ...f,
+                       custom_schedule: e.target.checked,
+                       weekdays: f.weekdays || [...DEFAULT_SETTINGS.weekdays],
+                       slots: f.slots || [...DEFAULT_SETTINGS.slots],
+                     }))}
+                     className="w-4 h-4 accent-blue-700" />
+              Jours et créneaux différents pour ce meuble
+            </label>
+
+            {form.custom_schedule && (
+              <div className="mt-3 space-y-4 border border-blue-200 rounded-lg bg-white p-4">
+                <div>
+                  <span className="text-sm text-slate-600">Jours</span>
+                  <div className="mt-2">
+                    <WeekdayPicker compact value={form.weekdays || DEFAULT_SETTINGS.weekdays}
+                                   onChange={(w) => set('weekdays', w)} />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-sm text-slate-600">Créneaux</span>
+                  <div className="mt-2">
+                    <SlotEditor compact value={form.slots || DEFAULT_SETTINGS.slots}
+                                onChange={(s) => set('slots', s)} pushToast={pushToast} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <span className="text-sm text-slate-600">Liens vers les autres sites</span>
+            <div className="mt-1 space-y-2">
+              {(form.links || []).map((l, idx) => (
+                <div key={idx} className="flex gap-2">
+                  <input value={l.label}
+                         onChange={(e) => { const links = [...form.links]; links[idx] = { ...l, label: e.target.value }; set('links', links); }}
+                         className="w-44 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" placeholder="Facebook Marketplace" />
+                  <input value={l.url}
+                         onChange={(e) => { const links = [...form.links]; links[idx] = { ...l, url: e.target.value }; set('links', links); }}
+                         className="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" placeholder="https://…" />
+                  <button onClick={() => set('links', form.links.filter((_, i) => i !== idx))}
+                          className="px-2 text-slate-400 hover:text-red-600" aria-label="Retirer le lien">
+                    <Icon name="x" className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {LINK_PRESETS.map((p) => (
+                <button key={p} onClick={() => set('links', [...(form.links || []), { label: p, url: '' }])}
+                        className="text-xs border border-blue-200 text-blue-800 rounded-full px-3 py-1 hover:bg-white">
+                  + {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex gap-2">
+            <button onClick={submit} disabled={busy}
+                    className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-5 py-2.5 text-sm">
+              {busy ? 'Enregistrement…' : form.id ? 'Enregistrer les modifications' : 'Publier l’annonce'}
+            </button>
+            <button onClick={() => { setOpen(false); setForm(emptyForm); }} className="text-sm text-slate-600 hover:text-slate-900 px-4">
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <div className="border border-dashed border-blue-200 rounded-xl px-6 py-12 text-center text-slate-600">
+          Aucun meuble pour l’instant. Ajoute ton premier objet pour ouvrir la boutique.
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          {items.map((item) => (
+            <li key={item.id} className="py-4 flex items-center gap-4">
+              <div className="w-20 h-16 rounded-lg bg-blue-50 border border-blue-100 overflow-hidden shrink-0 flex items-center justify-center">
+                {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                            : <Icon name="image" className="w-5 h-5 text-blue-200" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
+                  <span className="text-blue-700 text-sm">{item.price}</span>
+                  {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">Vendu</span>}
+                </div>
+                <p className="text-xs text-slate-500 mt-1 truncate">
+                  {[
+                    item.available_from && String(item.available_from).slice(0, 10) > todayKey()
+                      ? `à partir du ${String(item.available_from).slice(8, 10)}/${String(item.available_from).slice(5, 7)}`
+                      : null,
+                    item.available_to ? `jusqu’au ${String(item.available_to).slice(8, 10)}/${String(item.available_to).slice(5, 7)}` : null,
+                    item.custom_schedule ? 'horaires propres' : null,
+                    Array.isArray(item.links) && item.links.length ? item.links.map((l) => l.label).join(', ') : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => toggleSold(item)}
+                        className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
+                  {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
+                </button>
+                <button onClick={() => { setForm({ ...emptyForm, ...item, links: item.links || [] }); setOpen(true); }}
+                        className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
+                  <Icon name="pencil" className="w-4 h-4" />
+                </button>
+                <button onClick={() => remove(item)}
+                        className="p-2 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
+                  <Icon name="trash" className="w-4 h-4" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function BookingsPanel({ bookings, setBookings, pushToast }) {
+  const [filter, setFilter] = useState('all');
+
+  const update = async (id, status) => {
+    const { error } = await sb.from('bookings').update({ status }).eq('id', id);
+    if (error) return pushToast('Mise à jour impossible.');
+    setBookings(bookings.map((b) => (b.id === id ? { ...b, status } : b)));
+    pushToast(status === 'confirmed' ? 'Rendez-vous confirmé.' : 'Rendez-vous refusé, le créneau est libéré.');
+  };
+
+  const remove = async (id) => {
+    if (!window.confirm('Supprimer ce rendez-vous ?')) return;
+    const { error } = await sb.from('bookings').delete().eq('id', id);
+    if (error) return pushToast('Suppression impossible.');
+    setBookings(bookings.filter((b) => b.id !== id));
+  };
+
+  const markAllSeen = async () => {
+    const ids = bookings.filter((b) => b.status === 'new').map((b) => b.id);
+    if (!ids.length) return;
+    await sb.from('bookings').update({ status: 'seen' }).in('id', ids);
+    setBookings(bookings.map((b) => (b.status === 'new' ? { ...b, status: 'seen' } : b)));
+  };
+
+  const sorted = [...bookings].sort((a, b) => `${a.day} ${a.slot}`.localeCompare(`${b.day} ${b.slot}`));
+  const shown = filter === 'all' ? sorted : sorted.filter((b) => String(b.day).slice(0, 10) >= todayKey());
+  const newOnes = bookings.filter((b) => b.status === 'new').length;
+
+  const labels = {
+    new: ['Nouveau', 'bg-blue-700 text-white'],
+    seen: ['Vu', 'bg-slate-100 text-slate-600'],
+    confirmed: ['Confirmé', 'bg-blue-50 text-blue-800'],
+    declined: ['Refusé', 'bg-slate-100 text-slate-400'],
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="flex gap-2">
+          {[['all', 'Tous'], ['upcoming', 'À venir']].map(([id, label]) => (
+            <button key={id} onClick={() => setFilter(id)}
+                    className={`text-sm rounded-lg px-3 py-1.5 border ${
+                      filter === id ? 'border-blue-700 text-blue-800 bg-blue-50' : 'border-slate-200 text-slate-600'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {newOnes > 0 && (
+          <button onClick={markAllSeen} className="text-sm text-blue-700 hover:underline">Marquer tout comme lu</button>
+        )}
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="border border-dashed border-blue-200 rounded-xl px-6 py-12 text-center text-slate-600">
+          Aucun rendez-vous pour l’instant. Les demandes arrivent ici dès qu’un acheteur réserve un créneau.
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {shown.map((b) => {
+            const [label, cls] = labels[b.status] || labels.seen;
+            return (
+              <li key={b.id} className={`border rounded-xl px-4 py-4 ${b.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 font-semibold">
+                        <Icon name="user" className="w-4 h-4 text-blue-700" /> {b.first_name}
+                      </span>
+                      <span className={`text-xs rounded-full px-2 py-0.5 ${cls}`}>{label}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm text-slate-600 flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <a href={`tel:${String(b.phone).replace(/\s/g, '')}`} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
+                        <Icon name="phone" className="w-3.5 h-3.5" /> {b.phone}
+                      </a>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="calendar" className="w-3.5 h-3.5" /> {fmtDate(b.day, 'fr-FR')}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="clock" className="w-3.5 h-3.5" /> {b.slot}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">Pour : {b.item_title}</p>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {b.status !== 'confirmed' && (
+                      <button onClick={() => update(b.id, 'confirmed')}
+                              className="inline-flex items-center gap-1.5 text-sm bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-3 py-1.5">
+                        <Icon name="check" className="w-4 h-4" /> Confirmer
+                      </button>
+                    )}
+                    {b.status !== 'declined' && (
+                      <button onClick={() => update(b.id, 'declined')}
+                              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-slate-400">
+                        Refuser
+                      </button>
+                    )}
+                    <button onClick={() => remove(b.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
+                      <Icon name="trash" className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
+  const settingsJSON = JSON.stringify({ ...DEFAULT_SETTINGS, ...settings });
+  const [draft, setDraft] = useState(JSON.parse(settingsJSON));
+  const [saving, setSaving] = useState(false);
+  const now = new Date();
+  const [cursor, setCursor] = useState({ y: now.getFullYear(), m: now.getMonth() });
+
+  useEffect(() => { setDraft(JSON.parse(settingsJSON)); }, [settingsJSON]);
+
+  const dirty = JSON.stringify(draft) !== settingsJSON;
+  const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
+
+  const busyDates = new Set(bookings.filter((b) => b.status !== 'declined').map((b) => String(b.day).slice(0, 10)));
+  const blocked = new Set(draft.blocked || []);
+  const cells = monthDays(cursor.y, cursor.m);
+  const tKey = todayKey();
+
+  const toggleClosed = (k) => set('blocked', blocked.has(k) ? draft.blocked.filter((x) => x !== k) : [...draft.blocked, k]);
+
+  const submit = async () => {
+    setSaving(true);
+    const payload = {
+      address: draft.address, payment: draft.payment,
+      weekdays: draft.weekdays, slots: draft.slots, blocked: draft.blocked,
+    };
+    const { error } = await sb.from('settings').update(payload).eq('id', 1);
+    setSaving(false);
+    if (error) return pushToast('Enregistrement impossible.');
+    setSettings({ ...DEFAULT_SETTINGS, ...payload, id: 1 });
+    pushToast('Planning enregistré.');
+  };
+
+  return (
+    <div className="space-y-8 pb-24">
+      <div className="border border-blue-100 bg-blue-50 rounded-xl px-4 py-3 text-sm text-blue-900">
+        Ce planning s’applique par défaut à tous les meubles. Un meuble peut avoir ses
+        propres dates et horaires depuis l’onglet Annonces.
+      </div>
+
+      <section>
+        <h2 className="display font-bold text-lg">Jours où tu peux recevoir</h2>
+        <p className="text-sm text-slate-500 mt-0.5">Les jours décochés n’apparaissent pas dans le calendrier des acheteurs.</p>
+        <div className="mt-3">
+          <WeekdayPicker value={draft.weekdays} onChange={(w) => set('weekdays', w)} />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="display font-bold text-lg">Créneaux proposés</h2>
+        <p className="text-sm text-slate-500 mt-0.5">Un créneau déjà réservé se barre automatiquement chez l’acheteur.</p>
+        <div className="mt-3">
+          <SlotEditor value={draft.slots} onChange={(s) => set('slots', s)} pushToast={pushToast} />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="display font-bold text-lg">Jours fermés</h2>
+        <p className="text-sm text-slate-500 mt-0.5">Clique une date pour la fermer : vacances, examens, journée de déménagement.</p>
+        <div className="mt-3 max-w-sm border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setCursor(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
+                    className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Mois précédent">
+              <Icon name="left" className="w-5 h-5" />
+            </button>
+            <span className="font-semibold">
+              {new Date(cursor.y, cursor.m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+            </span>
+            <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
+                    className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Mois suivant">
+              <Icon name="right" className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">
+            {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => <div key={i} className="py-1">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((d, i) => {
+              if (!d) return <div key={i} />;
+              const k = toKey(d);
+              const past = k < tKey;
+              const off = blocked.has(k) || !draft.weekdays[(d.getDay() + 6) % 7];
+              const hasRdv = busyDates.has(k);
+              return (
+                <button key={i} disabled={past} onClick={() => toggleClosed(k)}
+                        title={hasRdv ? 'Un rendez-vous est déjà pris ce jour-là' : undefined}
+                        className={`h-10 rounded-lg text-sm relative ${
+                          past ? 'text-slate-200 cursor-not-allowed'
+                               : off ? 'bg-slate-100 text-slate-400 line-through'
+                                     : 'hover:bg-blue-50 text-slate-700'}`}>
+                  {d.getDate()}
+                  {hasRdv && !past && <span className="absolute bottom-1 left-1/2 -ml-0.5 w-1 h-1 rounded-full bg-blue-700" />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs text-slate-500 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-700 inline-block" />
+            Un point bleu signale un rendez-vous déjà pris.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="display font-bold text-lg">Lieu de retrait et paiement</h2>
+        <div className="mt-3 grid sm:grid-cols-2 gap-3 max-w-2xl">
+          <label className="block">
+            <span className="text-sm text-slate-600">Adresse affichée sur la carte</span>
+            <input value={draft.address || ''} onChange={(e) => set('address', e.target.value)}
+                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Alfavej 510, 13" />
+          </label>
+          <label className="block">
+            <span className="text-sm text-slate-600">Paiement (affiché en anglais)</span>
+            <input value={draft.payment || ''} onChange={(e) => set('payment', e.target.value)}
+                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Revolut transfer or MobilePay" />
+          </label>
+        </div>
+      </section>
+
+      {dirty && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3">
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <span className="text-sm text-slate-600 inline-flex items-center gap-2">
+              <Icon name="alert" className="w-4 h-4 text-blue-700" /> Modifications non enregistrées
+            </span>
+            <div className="flex gap-2">
+              <button onClick={() => setDraft(JSON.parse(settingsJSON))} className="text-sm text-slate-600 hover:text-slate-900 px-3">
+                Annuler
+              </button>
+              <button onClick={submit} disabled={saving}
+                      className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-5 py-2.5 text-sm">
+                {saving ? 'Enregistrement…' : 'Enregistrer le planning'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
 </body>
 </html>
