@@ -648,17 +648,43 @@ function Admin({ session, items, setItems, bookings, setBookings, settings, setS
   );
 }
 
+function authErrorMessage(err) {
+  const m = String((err && err.message) || '').toLowerCase();
+  if (m.includes('email not confirmed'))
+    return 'Le compte existe mais n’est pas confirmé. Dans Supabase : Authentication > Users, ouvre l’utilisateur et confirme-le, ou supprime-le et recrée-le en cochant « Auto Confirm User ».';
+  if (m.includes('invalid login credentials'))
+    return 'E-mail ou mot de passe incorrect. Attention : ce n’est pas le mot de passe de la base de données, mais celui du compte créé dans Authentication > Users.';
+  if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed'))
+    return 'Supabase est injoignable. Vérifie l’URL du projet dans index.html.';
+  if (m.includes('api key') || m.includes('apikey') || m.includes('jwt'))
+    return 'Clé anon invalide. Recopie-la depuis Project Settings > Data API.';
+  if (m.includes('rate') || m.includes('too many'))
+    return 'Trop de tentatives. Attends une minute avant de réessayer.';
+  if (m.includes('disabled') || m.includes('not enabled'))
+    return 'La connexion par e-mail est désactivée. Active-la dans Authentication > Sign In / Providers > Email.';
+  return 'Connexion impossible.';
+}
+
 function Login({ onShop }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [detail, setDetail] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
+    setError('');
+    setDetail('');
     setBusy(true);
-    const { error: err } = await sb.auth.signInWithPassword({ email: email.trim(), password });
+    const { error: err } = await sb.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
     setBusy(false);
-    if (err) setError('Identifiants incorrects.');
+    if (err) {
+      setError(authErrorMessage(err));
+      setDetail(err.message || '');
+    }
   };
 
   return (
@@ -669,11 +695,17 @@ function Login({ onShop }) {
           Connecte-toi pour gérer les annonces, les rendez-vous et le planning.
         </p>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+               autoComplete="username"
                className="w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Adresse e-mail" />
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-               onKeyDown={(e) => e.key === 'Enter' && submit()}
+               onKeyDown={(e) => e.key === 'Enter' && submit()} autoComplete="current-password"
                className="mt-3 w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Mot de passe" />
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="mt-3 border border-red-200 bg-red-50 rounded-lg px-3 py-2.5">
+            <p className="text-sm text-red-700 leading-relaxed">{error}</p>
+            {detail && <p className="mt-1 text-xs text-red-400 break-words">Message technique : {detail}</p>}
+          </div>
+        )}
         <button onClick={submit} disabled={busy}
                 className="mt-4 w-full font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-2.5">
           {busy ? 'Connexion…' : 'Se connecter'}
