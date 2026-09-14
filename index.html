@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Furniture for sale</title>
+<meta name="description" content="Furniture for sale after my internship. Book a viewing.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- =====================================================================
+     À REMPLIR : Supabase > Project Settings > Data API
+     Ces deux valeurs sont publiques par conception, elles peuvent rester
+     dans un dépôt public. Ce sont les règles RLS de schema.sql qui
+     protègent les données.
+     ===================================================================== -->
+<script>
+  window.CONFIG = {
+    SUPABASE_URL: "https://dmjpjbgnghwzciwnciyb.supabase.co/rest/v1/",
+    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtanBqYmduZ2h3emNpd25jaXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNjQwMjksImV4cCI6MjEwNDk0MDAyOX0.PHu6YcCQLJTx6T-c_wGdQmnzPb9YoFC80qiZ9bFjDgk'
+  };
+</script>
+
+<style>
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  .display { font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; }
+  *:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-white text-slate-900">
+  <div id="root"></div>
+  <noscript>This page needs JavaScript to show the furniture list.</noscript>
+  <script type="text/babel" data-presets="react" src="app.jsx"></script>
+</body>
+</html>
