@@ -105,6 +105,19 @@ const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
 const LAST_DAY = '2026-11-30';
 const LAST_MONTH = LAST_DAY.slice(0, 7); // '2026-11'
 
+/* ---------------------------- paiement ------------------------------ */
+// Choix obligatoire à la réservation : l'acheteur annonce comment il paiera.
+// `id` est ce qui part en base, `en` s'affiche dans la boutique (anglais),
+// `fr` dans l'espace vendeur.
+const PAYMENT_METHODS = [
+  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay' },
+  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut' },
+];
+const paymentLabel = (id, lang) => {
+  const m = PAYMENT_METHODS.find((p) => p.id === id);
+  return m ? m[lang] : null;
+};
+
 /* ------------------------------ dates ------------------------------ */
 const pad = (n) => String(n).padStart(2, '0');
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -176,6 +189,7 @@ const PATHS = {
   store: 'M4 9h16v11H4zM4 9l1.5-5h13L20 9M9 20v-6h6v6',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   alert: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  card: 'M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM2 10h20M6 15h4',
 };
 
 function Icon({ name, className }) {
@@ -528,6 +542,7 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
   const [slot, setSlot] = useState(null);
   const [firstName, setFirstName] = useState('');
   const [phone, setPhone] = useState('');
+  const [payment, setPayment] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(null);
@@ -545,6 +560,7 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
     if (!day || !slot) return setError('Pick a day and a time first.');
     if (firstName.trim().length < 2) return setError('Please enter your first name.');
     if (phone.replace(/\D/g, '').length < 6) return setError('Please enter a valid phone number.');
+    if (!payment) return setError('Please choose how you will pay.');
     if (taken.has(`${day} ${slot}`)) return setError('That slot was just taken, please pick another one.');
     setError('');
     setSending(true);
@@ -553,6 +569,7 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
       item_title: item.title,
       first_name: firstName.trim(),
       phone: phone.trim(),
+      payment,
       day,
       slot,
       status: 'new',
@@ -595,6 +612,11 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
               <strong>{fmtDate(done.day, 'en-GB')}</strong> at <strong>{done.slot}</strong>.
             </p>
             <p className="text-sm text-slate-500 mt-2">I will write to you on {done.phone}.</p>
+            {paymentLabel(done.payment, 'en') && (
+              <p className="text-sm text-slate-500 mt-1">
+                Payment on pickup by <strong>{paymentLabel(done.payment, 'en')}</strong>.
+              </p>
+            )}
             <button onClick={onClose} className="mt-6 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-5 py-2.5">
               Back to the list
             </button>
@@ -671,6 +693,25 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
                        className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="+45 12 34 56 78" />
               </label>
+            </div>
+
+            <div className="mt-4">
+              <span className="text-sm text-slate-600">How will you pay?</span>
+              <div className="mt-1.5 grid sm:grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map((m) => {
+                  const on = payment === m.id;
+                  return (
+                    <button key={m.id} onClick={() => { setPayment(m.id); setError(''); }}
+                            aria-pressed={on}
+                            className={`px-3 py-2.5 rounded-lg text-sm border text-left ${
+                              on ? 'bg-blue-700 border-blue-700 text-white font-semibold'
+                                 : 'border-blue-200 text-blue-800 hover:bg-blue-50'}`}>
+                      {m.en}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5">Nothing to pay now — you pay when you pick the furniture up.</p>
             </div>
 
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
@@ -1207,6 +1248,11 @@ function BookingsPanel({ bookings, setBookings, pushToast }) {
                       <span className="inline-flex items-center gap-1.5">
                         <Icon name="clock" className="w-3.5 h-3.5" /> {b.slot}
                       </span>
+                      {paymentLabel(b.payment, 'fr') && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Icon name="card" className="w-3.5 h-3.5" /> {paymentLabel(b.payment, 'fr')}
+                        </span>
+                      )}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">Pour : {b.item_title}</p>
                   </div>

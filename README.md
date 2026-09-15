@@ -11,6 +11,7 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `app.jsx` | dépôt GitHub | toujours — toute l'application |
 | `schema.sql` | Supabase, SQL Editor | une fois, au début |
 | `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée |
+| `migration-paiement.sql` | Supabase, SQL Editor | une fois, si la base existait avant le choix MobilePay / Revolut |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `affiche.html` | ton ordinateur | à ouvrir dans le navigateur puis imprimer en PDF |
 

@@ -47,7 +47,10 @@ begin
       'message',  new.first_name || ' — ' ||
                   to_char(new.day, 'DD/MM') || ' à ' || new.slot ||
                   E'\n' || coalesce(new.item_title, 'Meuble') ||
-                  E'\n' || new.phone,
+                  E'\n' || new.phone ||
+                  coalesce(E'\n' || case new.payment
+                    when 'mobilepay' then 'MobilePay'
+                    when 'revolut' then 'Virement Revolut' end, ''),
       'tags',     jsonb_build_array('calendar'),
       'priority', 4
     )
@@ -119,6 +122,9 @@ begin
         'Téléphone : <a href="tel:' || replace(new.phone, ' ', '') || '">' || new.phone || '</a><br>' ||
         'Date : ' || to_char(new.day, 'DD/MM/YYYY') || ' à ' || new.slot || '<br>' ||
         'Meuble : ' || coalesce(new.item_title, '—') ||
+        coalesce('<br>Paiement : ' || case new.payment
+          when 'mobilepay' then 'MobilePay'
+          when 'revolut' then 'Virement instantané Revolut' end, '') ||
         '</p>'
     )
   );
@@ -230,6 +236,9 @@ begin
         'Téléphone : <a href="tel:' || replace(new.phone, ' ', '') || '">' || new.phone || '</a><br>' ||
         'Date : ' || to_char(new.day, 'DD/MM/YYYY') || ' à ' || new.slot || '<br>' ||
         'Meuble : ' || coalesce(new.item_title, '—') ||
+        coalesce('<br>Paiement : ' || case new.payment
+          when 'mobilepay' then 'MobilePay'
+          when 'revolut' then 'Virement instantané Revolut' end, '') ||
         '</p>'
     )
   );
