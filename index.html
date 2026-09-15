@@ -81,6 +81,24 @@ const DEFAULT_SETTINGS = {
   blocked: [],
 };
 
+/* ---------------------------- objectif ----------------------------- */
+// Somme que la vente doit rapporter, en couronnes.
+const SALES_GOAL = 3000;
+
+// Les prix sont saisis librement (« 450 kr », « 1.200 », « 1 200,50 »).
+// On en extrait un nombre pour pouvoir les additionner.
+function priceValue(raw) {
+  if (!raw) return 0;
+  const cleaned = String(raw)
+    .replace(/[^\d.,]/g, '')
+    .replace(/[.,](?=\d{3}(\D|$))/g, '')
+    .replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isFinite(n) ? n : 0;
+}
+
+const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
+
 /* ------------------------------ dates ------------------------------ */
 const pad = (n) => String(n).padStart(2, '0');
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -784,6 +802,54 @@ const emptyForm = {
   available_from: '', available_to: '', custom_schedule: false, weekdays: null, slots: null,
 };
 
+/* --------------------- objectif de vente (3000 kr) ------------------ */
+
+function GoalProgress({ items }) {
+  const sold = items.filter((i) => i.status === 'sold');
+  const listed = items.filter((i) => i.status !== 'sold');
+  const soldTotal = sold.reduce((sum, i) => sum + priceValue(i.price), 0);
+  const listedTotal = listed.reduce((sum, i) => sum + priceValue(i.price), 0);
+  const missing = Math.max(0, SALES_GOAL - soldTotal);
+  const pct = (n) => Math.min(100, (n / SALES_GOAL) * 100);
+  const reached = soldTotal >= SALES_GOAL;
+
+  const bar = (label, count, total, fill, track, note) => (
+    <div>
+      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+        <span className="text-sm text-slate-600">
+          {label} <span className="text-slate-400">· {count} meuble{count > 1 ? 's' : ""}</span>
+        </span>
+        <span className="text-sm font-semibold tabular-nums">{fmtKr(total)}</span>
+      </div>
+      <div className={`h-3 rounded-full overflow-hidden ${track}`}>
+        <div className={`h-full rounded-full ${fill} transition-all duration-500`}
+             style={{ width: `${pct(total)}%` }} />
+      </div>
+      <p className="text-xs text-slate-500 mt-1.5">{note}</p>
+    </div>
+  );
+
+  return (
+    <section className="border border-blue-200 rounded-xl bg-blue-50 px-5 py-5 mb-8">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-5">
+        <h2 className="display font-bold text-lg">Objectif : {fmtKr(SALES_GOAL)}</h2>
+        <span className={`text-sm font-semibold ${reached ? 'text-green-700' : 'text-blue-800'}`}>
+          {reached ? 'Objectif atteint 🎉' : `Il manque ${fmtKr(missing)}`}
+        </span>
+      </div>
+
+      <div className="space-y-5">
+        {bar('Vendu', sold.length, soldTotal, 'bg-blue-700', 'bg-blue-100',
+          `${Math.round(pct(soldTotal))} % de l’objectif`)}
+        {bar('En vente', listed.length, listedTotal, 'bg-blue-400', 'bg-blue-100',
+          listedTotal + soldTotal >= SALES_GOAL
+            ? `Tout vendre rapporterait ${fmtKr(soldTotal + listedTotal)}, l’objectif est atteignable.`
+            : `Même en vendant tout (${fmtKr(soldTotal + listedTotal)}), il manquerait ${fmtKr(SALES_GOAL - soldTotal - listedTotal)}.`)}
+      </div>
+    </section>
+  );
+}
+
 function ItemsPanel({ items, setItems, pushToast }) {
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
@@ -844,6 +910,8 @@ function ItemsPanel({ items, setItems, pushToast }) {
 
   return (
     <div>
+      <GoalProgress items={items} />
+
       <div className="flex items-center justify-between mb-5">
         <p className="text-slate-500 text-sm">{items.length} meuble{items.length > 1 ? 's' : ''} enregistré{items.length > 1 ? 's' : ''}</p>
         <button onClick={() => { setForm(emptyForm); setOpen(true); }}
