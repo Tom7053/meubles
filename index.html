@@ -99,10 +99,18 @@ function priceValue(raw) {
 
 const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
 
+/* ---------------------------- fin de vente -------------------------- */
+// Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
+// les calendriers s'arrêtent là et on ne peut pas aller au mois suivant.
+const LAST_DAY = '2026-11-30';
+const LAST_MONTH = LAST_DAY.slice(0, 7); // '2026-11'
+
 /* ------------------------------ dates ------------------------------ */
 const pad = (n) => String(n).padStart(2, '0');
 const toKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const todayKey = () => toKey(new Date());
+// '2026-11' pour l'année/mois affichés par un calendrier
+const cursorKey = ({ y, m }) => `${y}-${pad(m + 1)}`;
 
 function fmtDate(key, locale) {
   if (!key) return '';
@@ -240,7 +248,9 @@ function scheduleFor(item, settings) {
   const weekdays = (custom && Array.isArray(item.weekdays) ? item.weekdays : settings.weekdays) || DEFAULT_SETTINGS.weekdays;
   const slots = (custom && Array.isArray(item.slots) && item.slots.length ? item.slots : settings.slots) || FALLBACK_SLOTS;
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
-  const until = item.available_to ? String(item.available_to).slice(0, 10) : null;
+  const itemUntil = item.available_to ? String(item.available_to).slice(0, 10) : null;
+  // Rien au-delà du dernier jour de vente, même si l'annonce dit plus tard.
+  const until = itemUntil && itemUntil < LAST_DAY ? itemUntil : LAST_DAY;
   const start = from && from > todayKey() ? from : todayKey();
   return { weekdays, slots, from, until, start, closed: new Set(settings.blocked || []) };
 }
@@ -509,7 +519,8 @@ function PickupMap({ address }) {
 function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
   const plan = scheduleFor(item, settings);
   const opening = (() => {
-    const [y, m] = plan.start.split('-').map(Number);
+    const first = plan.start <= LAST_DAY ? plan.start : LAST_DAY;
+    const [y, m] = first.split('-').map(Number);
     return { y, m: m - 1 };
   })();
   const [cursor, setCursor] = useState(opening);
@@ -599,7 +610,9 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
                 {new Date(cursor.y, cursor.m, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
               </span>
               <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-                      className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Next month">
+                      disabled={cursorKey(cursor) >= LAST_MONTH}
+                      className="p-1.5 rounded text-blue-700 enabled:hover:bg-blue-50 disabled:text-slate-200 disabled:cursor-not-allowed"
+                      aria-label="Next month">
                 <Icon name="right" className="w-5 h-5" />
               </button>
             </div>
@@ -979,12 +992,14 @@ function ItemsPanel({ items, setItems, pushToast }) {
                 <span className="text-sm text-slate-600">Visible à partir du</span>
                 <input type="date" value={form.available_from || ''}
                        onChange={(e) => set('available_from', e.target.value)}
+                       max={LAST_DAY}
                        className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
               </label>
               <label className="block">
                 <span className="text-sm text-slate-600">Dernier jour possible</span>
                 <input type="date" value={form.available_to || ''}
                        onChange={(e) => set('available_to', e.target.value)}
+                       max={LAST_DAY}
                        className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
               </label>
             </div>
@@ -1291,7 +1306,9 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
               {new Date(cursor.y, cursor.m, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
             </span>
             <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-                    className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Mois suivant">
+                    disabled={cursorKey(cursor) >= LAST_MONTH}
+                    className="p-1.5 rounded text-blue-700 enabled:hover:bg-blue-50 disabled:text-slate-200 disabled:cursor-not-allowed"
+                    aria-label="Mois suivant">
               <Icon name="right" className="w-5 h-5" />
             </button>
           </div>
@@ -1302,12 +1319,13 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
             {cells.map((d, i) => {
               if (!d) return <div key={i} />;
               const k = toKey(d);
-              const past = k < tKey;
+              const past = k < tKey || k > LAST_DAY; // avant aujourd'hui ou après la fin de la vente
               const off = blocked.has(k) || !draft.weekdays[(d.getDay() + 6) % 7];
               const hasRdv = busyDates.has(k);
               return (
                 <button key={i} disabled={past} onClick={() => toggleClosed(k)}
-                        title={hasRdv ? 'Un rendez-vous est déjà pris ce jour-là' : undefined}
+                        title={k > LAST_DAY ? 'Après la fin de la vente'
+                                            : hasRdv ? 'Un rendez-vous est déjà pris ce jour-là' : undefined}
                         className={`h-10 rounded-lg text-sm relative ${
                           past ? 'text-slate-200 cursor-not-allowed'
                                : off ? 'bg-slate-100 text-slate-400 line-through'
