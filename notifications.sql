@@ -50,6 +50,7 @@ begin
                   E'\n' || new.phone ||
                   coalesce(E'\n' || case new.payment
                     when 'mobilepay' then 'MobilePay'
+                    when 'cash' then 'Espèces'
                     when 'revolut' then 'Virement Revolut' end, ''),
       'tags',     jsonb_build_array('calendar'),
       'priority', 4
@@ -124,6 +125,7 @@ begin
         'Meuble : ' || coalesce(new.item_title, '—') ||
         coalesce('<br>Paiement : ' || case new.payment
           when 'mobilepay' then 'MobilePay'
+          when 'cash' then 'Espèces'
           when 'revolut' then 'Virement instantané Revolut' end, '') ||
         '</p>'
     )
@@ -238,6 +240,7 @@ begin
         'Meuble : ' || coalesce(new.item_title, '—') ||
         coalesce('<br>Paiement : ' || case new.payment
           when 'mobilepay' then 'MobilePay'
+          when 'cash' then 'Espèces'
           when 'revolut' then 'Virement instantané Revolut' end, '') ||
         '</p>'
     )

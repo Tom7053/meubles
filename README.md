@@ -11,7 +11,7 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `app.jsx` | dépôt GitHub | toujours — toute l'application |
 | `schema.sql` | Supabase, SQL Editor | une fois, au début |
 | `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée |
-| `migration-paiement.sql` | Supabase, SQL Editor | une fois, si la base existait avant le choix MobilePay / Revolut |
+| `migration-paiement.sql` | Supabase, SQL Editor | si la base existait avant le choix du paiement, **ou pour accepter Cash** (sans risque à relancer) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
@@ -84,8 +84,9 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix, clique sur un
-  texte pour le modifier, puis **Imprimer / Enregistrer en PDF** (A4, marges « Aucune »,
-  graphiques d'arrière-plan cochés). Le choix est gardé dans ce navigateur.
+  texte pour le modifier, choisis les paiements affichés en bas (Revolut et Cash au
+  départ, on en retire ou on en ajoute), puis **Imprimer / Enregistrer en PDF** (A4,
+  marges « Aucune », graphiques d'arrière-plan cochés). Le choix est gardé dans ce navigateur.
 
 ---
 

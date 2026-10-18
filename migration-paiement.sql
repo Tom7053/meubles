@@ -5,8 +5,11 @@
 --  déjà.)
 -- =====================================================================
 
--- La colonne accepte 'mobilepay', 'revolut', ou rien pour les rendez-vous
--- pris avant cette mise à jour.
+-- La colonne accepte 'revolut', 'cash', 'mobilepay' (plus proposé, gardé
+-- pour les rendez-vous déjà pris avec), ou rien pour les rendez-vous pris
+-- avant cette mise à jour.
+-- On peut relancer ce fichier sans risque : c'est comme ça qu'on ajoute
+-- 'cash' à une base qui l'avait déjà lancé.
 alter table public.bookings
   add column if not exists payment text;
 
@@ -15,4 +18,4 @@ alter table public.bookings
 
 alter table public.bookings
   add constraint bookings_payment_check
-  check (payment is null or payment in ('mobilepay', 'revolut'));
+  check (payment is null or payment in ('revolut', 'cash', 'mobilepay'));

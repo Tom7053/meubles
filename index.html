@@ -153,7 +153,7 @@ const FALLBACK_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '1
 const DEFAULT_SETTINGS = {
   id: 1,
   address: 'Alfavej 510, 13',
-  payment: 'MobilePay or Revolut',
+  payment: 'Revolut or cash',
   weekdays: [true, true, true, true, true, true, false],
   slots: FALLBACK_SLOTS,
   blocked: [],
@@ -186,10 +186,14 @@ const LAST_MONTH = LAST_DAY.slice(0, 7); // '2026-11'
 /* ---------------------------- paiement ------------------------------ */
 // Choix obligatoire à la réservation : l'acheteur annonce comment il paiera.
 // `id` est ce qui part en base, `en` s'affiche dans la boutique (anglais),
-// `fr` dans l'espace vendeur, `short` sur l'affiche.
+// `fr` dans l'espace vendeur. L'affiche a sa propre liste (POSTER_PAY_DEFAULT).
+// Un moyen `retired` n'est plus proposé mais reste lisible sur les anciens
+// rendez-vous. Tout nouvel `id` doit aussi être accepté par la base
+// (migration-paiement.sql).
 const PAYMENT_METHODS = [
-  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay', short: 'MobilePay' },
-  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut', short: 'Revolut' },
+  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut' },
+  { id: 'cash', en: 'Cash', fr: 'Espèces' },
+  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay', retired: true },
 ];
 const paymentLabel = (id, lang) => {
   const m = PAYMENT_METHODS.find((p) => p.id === id);
@@ -955,7 +959,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
         <legend className="font-semibold">How will you pay?</legend>
         <span className="block text-sm text-slate-500">Nothing to pay now — you pay when you pick it up.</span>
         <div className="mt-2 grid gap-2" role="radiogroup">
-          {PAYMENT_METHODS.map((m) => {
+          {PAYMENT_METHODS.filter((m) => !m.retired).map((m) => {
             const on = payment === m.id;
             return (
               <button key={m.id} role="radio" aria-checked={on}
@@ -1923,7 +1927,7 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
           <label className="block">
             <span className="text-sm text-slate-600">Paiement (affiché en anglais)</span>
             <input value={draft.payment || ''} onChange={(e) => set('payment', e.target.value)}
-                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Revolut transfer or MobilePay" />
+                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Revolut or cash" />
           </label>
         </div>
       </section>
@@ -1953,10 +1957,15 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
 /* ------------------------------ affiche ----------------------------- */
 // L'affiche A4 à imprimer, générée à partir des annonces : on coche les
 // meubles qui y figurent avec leur prix, les autres sont cités en une ligne.
-// Le choix et les textes retouchés restent enregistrés dans ce navigateur.
+// Le choix, les textes retouchés et les paiements affichés restent
+// enregistrés dans ce navigateur.
 
 const POSTER_PICKS_KEY = 'meubles-affiche-choix';
 const POSTER_TEXTS_KEY = 'meubles-affiche-textes';
+const POSTER_PAY_KEY = 'meubles-affiche-paiements';
+// Paiements en bas de l'affiche, en anglais comme le reste de l'affiche.
+const POSTER_PAY_DEFAULT = ['Revolut', 'Cash'];
+const POSTER_PAY_PRESETS = ['Revolut', 'Cash', 'MobilePay'];
 const A4_PX = { w: 793.7, h: 1122.5 }; // 210 × 297 mm à 96 px par pouce
 
 function readStored(key, fallback) {
@@ -2006,10 +2015,61 @@ function PosterText({ as: Tag, field, texts, onSave, className, children }) {
   );
 }
 
+// Liste des paiements de l'affiche : on retire, on ajoute un nom libre ou
+// on remet en un clic un des moyens habituels.
+function PosterPayEditor({ value, onChange }) {
+  const [draft, setDraft] = useState('');
+  const has = (name) => value.some((p) => p.toLowerCase() === name.toLowerCase());
+  const add = (label) => {
+    const name = label.trim();
+    if (!name || has(name)) return setDraft('');
+    onChange([...value, name]);
+    setDraft('');
+  };
+
+  return (
+    <section>
+      <h2 className="display font-bold text-lg">Paiements sur l’affiche</h2>
+      <p className="text-sm text-slate-500 mt-0.5">Écris-les en anglais, comme le reste de l’affiche.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {value.map((p) => (
+          <span key={p} className="inline-flex items-center gap-2 border border-blue-200 bg-blue-50 text-blue-800 rounded-lg text-sm px-3 py-1.5">
+            {p}
+            <button type="button" onClick={() => onChange(value.filter((x) => x !== p))}
+                    className="text-blue-400 hover:text-red-600" aria-label={`Retirer ${p}`}>
+              <Icon name="x" className="w-3.5 h-3.5" />
+            </button>
+          </span>
+        ))}
+        {value.length === 0 && <span className="text-sm text-slate-400">Aucun : rien ne s’affiche sous l’adresse.</span>}
+      </div>
+      <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); add(draft); }}>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Autre (ex. Card)"
+               className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" />
+        <button type="submit"
+                className="inline-flex items-center gap-1.5 border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm hover:border-blue-400 hover:text-blue-700">
+          <Icon name="plus" className="w-4 h-4" /> Ajouter
+        </button>
+      </form>
+      {POSTER_PAY_PRESETS.some((p) => !has(p)) && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {POSTER_PAY_PRESETS.filter((p) => !has(p)).map((p) => (
+            <button key={p} type="button" onClick={() => add(p)}
+                    className="text-xs border border-blue-200 text-blue-800 rounded-full px-3 py-1 hover:bg-blue-50">
+              + {p}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function PosterPanel({ items, settings }) {
   const available = items.filter((i) => i.status !== 'sold');
   const [picks, setPicks] = useState(() => readStored(POSTER_PICKS_KEY, null));
   const [texts, setTexts] = useState(() => readStored(POSTER_TEXTS_KEY, {}));
+  const [pays, setPays] = useState(() => readStored(POSTER_PAY_KEY, POSTER_PAY_DEFAULT));
   const [link, setLink] = useState(SITE_URL);
   const [scale, setScale] = useState(0.5);
   const [overflow, setOverflow] = useState(false);
@@ -2038,6 +2098,7 @@ function PosterPanel({ items, settings }) {
   };
   const resetTexts = () => { setTexts({}); writeStored(POSTER_TEXTS_KEY, {}); };
   const edit = { texts, onSave: saveText };
+  const savePays = (list) => { setPays(list); writeStored(POSTER_PAY_KEY, list); };
 
   // L'aperçu est une vraie page A4, réduite pour tenir dans l'écran.
   useEffect(() => {
@@ -2101,6 +2162,8 @@ function PosterPanel({ items, settings }) {
             </>
           )}
         </section>
+
+        <PosterPayEditor value={pays} onChange={savePays} />
 
         <label className="block">
           <span className="text-sm text-slate-600">Lien du QR code</span>
@@ -2169,9 +2232,11 @@ function PosterPanel({ items, settings }) {
                   {settings.address ? `Pickup at ${settings.address}` : 'Pickup only'}
                 </PosterText>
                 <PosterText as="p" field="confirm" {...edit}>I will message you to confirm the time</PosterText>
-                <div className="pst-pay">
-                  {PAYMENT_METHODS.map((m) => <span key={m.id}>{m.short}</span>)}
-                </div>
+                {pays.length > 0 && (
+                  <div className="pst-pay">
+                    {pays.map((p) => <span key={p}>{p}</span>)}
+                  </div>
+                )}
               </div>
             </div>
           </div>
