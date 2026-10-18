@@ -13,6 +13,7 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée |
 | `migration-paiement.sql` | Supabase, SQL Editor | une fois, si la base existait avant le choix MobilePay / Revolut |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
+| `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | ton ordinateur | à ouvrir dans le navigateur puis imprimer en PDF |
 
 Seuls `index.html` et `app.jsx` sont publiés sur GitHub. Les fichiers `.sql` se
@@ -69,16 +70,42 @@ Ne mets jamais la clé `service_role` dans ces fichiers, celle-là donne tous le
 C'est cette adresse à coller dans le champ de l'affiche pour générer le QR code.
 **Fixe-la avant d'imprimer.**
 
+Dans Supabase, **Authentication → URL Configuration → Site URL**, colle cette même
+adresse (`https://TON-PSEUDO.github.io/meubles/`) puis **Save**. Sans ça, le lien
+« Mot de passe oublié » reçu par e-mail renvoie vers `localhost` et ne marche pas.
+
 ## 6. Premier usage
 
-Ouvre le site, clique sur **Seller access** en bas de page, connecte-toi avec l'e-mail
-de l'étape 3. Trois onglets :
+Ouvre le site, clique sur **Seller access** en bas de page (ou va directement sur
+`https://TON-PSEUDO.github.io/meubles/#vendeur`, à mettre en favori sur ton téléphone),
+connecte-toi avec l'e-mail de l'étape 3. Trois onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 
 ---
+
+## Mot de passe oublié
+
+Deux solutions :
+
+- **Depuis le site** : écran de connexion → **Mot de passe oublié ?** → entre ton
+  e-mail. Supabase t'envoie un lien qui te ramène sur le site pour choisir un
+  nouveau mot de passe. Il faut que la **Site URL** soit réglée (voir étape 5).
+  Le service d'e-mail gratuit de Supabase n'envoie que quelques e-mails par heure,
+  et seulement aux adresses membres de ton organisation Supabase.
+- **Directement dans Supabase**, immédiat et sans e-mail : ouvre
+  `reset-mot-de-passe.sql`, mets ton e-mail et le nouveau mot de passe, colle-le
+  dans le SQL Editor et **Run**.
+
+Attention à ne pas confondre : ce mot de passe est celui du compte vendeur du site
+(Authentication → Users), pas celui de ton compte supabase.com ni celui de la base.
+
+**Projet en pause.** Supabase met en pause les projets gratuits restés une semaine
+sans activité : le site n'affiche plus rien et la connexion dit « Supabase est
+injoignable ». Va sur supabase.com, ouvre le projet et clique sur **Restore project**,
+puis attends quelques minutes.
 
 ## Notes
 

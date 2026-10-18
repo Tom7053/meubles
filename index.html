@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Furniture for sale</title>
+<title>Furniture for sale — Odense</title>
 <meta name="description" content="Furniture for sale before 20 November. Book a viewing.">
+<meta name="theme-color" content="#1e40af">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,6 +38,14 @@
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
   .display { font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; }
   *:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+  html { scroll-behavior: smooth; }
+  button { -webkit-tap-highlight-color: transparent; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  /* Sous 16 px, l'iPhone zoome sur le champ dès qu'on le touche. */
+  @media (max-width: 639px) {
+    input, select, textarea { font-size: 16px !important; }
+  }
 </style>
 </head>
 <body class="bg-white text-slate-900">
@@ -61,6 +70,17 @@ const SUPABASE_URL = window.CONFIG.SUPABASE_URL
   .trim()
   .replace(/\/(rest|auth|storage|realtime)\/v1\/?$/, '')
   .replace(/\/+$/, '');
+
+// Le lien « mot de passe oublié » reçu par e-mail revient sur cette page avec
+// #access_token=…&type=recovery (ou #error=… s'il a expiré). On le lit avant
+// que Supabase ne nettoie l'adresse.
+const START_HASH = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+const FROM_RESET_LINK = START_HASH.get('type') === 'recovery';
+const RESET_LINK_FAILED = !!START_HASH.get('error_description');
+// …/meubles/#vendeur ouvre directement l'espace vendeur (à mettre en favori).
+const START_IN_ADMIN = FROM_RESET_LINK || RESET_LINK_FAILED || /^#(vendeur|admin)$/.test(window.location.hash);
+// Là où le lien de réinitialisation doit ramener : cette page-ci.
+const SITE_URL = window.location.origin + window.location.pathname;
 
 const sb = configured
   ? window.supabase.createClient(SUPABASE_URL, window.CONFIG.SUPABASE_ANON_KEY.trim())
@@ -125,13 +145,21 @@ const todayKey = () => toKey(new Date());
 // '2026-11' pour l'année/mois affichés par un calendrier
 const cursorKey = ({ y, m }) => `${y}-${pad(m + 1)}`;
 
+function keyToDate(key) {
+  const [y, m, d] = String(key).slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 function fmtDate(key, locale) {
   if (!key) return '';
-  const [y, m, d] = String(key).slice(0, 10).split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(locale, {
+  return keyToDate(key).toLocaleDateString(locale, {
     weekday: 'long', day: 'numeric', month: 'long',
   });
 }
+
+// 'Thu 23 Oct' par défaut, ou le morceau demandé ({ weekday: 'short' }…)
+const fmtShort = (key, opts) =>
+  keyToDate(key).toLocaleDateString('en-GB', opts || { weekday: 'short', day: 'numeric', month: 'short' });
 
 function monthDays(year, month) {
   const offset = (new Date(year, month, 1).getDay() + 6) % 7; // lundi = 0
@@ -190,6 +218,10 @@ const PATHS = {
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
   alert: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
   card: 'M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM2 10h20M6 15h4',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  eyeOff: 'M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.9 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2',
+  mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6',
+  key: 'M21 2l-9.6 9.6M15.5 7.5l3 3L22 7l-3-3M7.5 21a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z',
 };
 
 function Icon({ name, className }) {
@@ -269,16 +301,40 @@ function scheduleFor(item, settings) {
   return { weekdays, slots, from, until, start, closed: new Set(settings.blocked || []) };
 }
 
+// Créneaux d'un jour : [{ time, free }]. Aujourd'hui, les heures passées disparaissent.
+function slotsFor(k, plan, taken) {
+  const now = new Date();
+  const nowHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return plan.slots
+    .filter((s) => k !== todayKey() || s > nowHM)
+    .map((s) => ({ time: s, free: !taken.has(`${k} ${s}`) }));
+}
+
+// Jours proposés à l'acheteur : ouverts, et avec au moins un créneau libre.
+function bookableDays(plan, taken) {
+  const out = [];
+  for (let d = keyToDate(plan.start); toKey(d) <= plan.until; d.setDate(d.getDate() + 1)) {
+    const k = toKey(d);
+    if (!plan.weekdays[(d.getDay() + 6) % 7] || plan.closed.has(k)) continue;
+    if (slotsFor(k, plan, taken).some((s) => s.free)) out.push(k);
+  }
+  return out;
+}
+
 /* =================================================================== */
 
 function App() {
-  const [route, setRoute] = useState('shop');
+  const [route, setRoute] = useState(START_IN_ADMIN ? 'admin' : 'shop');
   const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [recovering, setRecovering] = useState(FROM_RESET_LINK);
+  const [linkProblem, setLinkProblem] = useState(RESET_LINK_FAILED);
   const [items, setItems] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const pushToast = useCallback((text, tone) => {
@@ -290,10 +346,44 @@ function App() {
   /* ---- session ---- */
   useEffect(() => {
     if (!sb) return;
-    sb.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = sb.auth.onAuthStateChange((_e, s) => setSession(s));
+    sb.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      // Revenu par le lien mais sans session : il a expiré ou déjà servi.
+      if (FROM_RESET_LINK && !data.session) {
+        setRecovering(false);
+        setLinkProblem(true);
+      }
+      setAuthReady(true);
+    });
+    const { data } = sb.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (s) setLinkProblem(false);
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecovering(true);
+        setRoute('admin');
+      }
+    });
     return () => data.subscription.unsubscribe();
   }, []);
+
+  // #vendeur tapé à la main dans l'adresse, page déjà ouverte.
+  useEffect(() => {
+    const onHash = () => { if (/^#(vendeur|admin)$/.test(window.location.hash)) setRoute('admin'); };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // L'adresse suit l'écran : …/#vendeur se met en favori, la boutique reste propre.
+  const goAdmin = () => {
+    setRoute('admin');
+    window.history.replaceState(null, '', '#vendeur');
+    window.scrollTo(0, 0);
+  };
+  const goShop = () => {
+    setRoute('shop');
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    window.scrollTo(0, 0);
+  };
 
   /* ---- données publiques ---- */
   const loadPublic = useCallback(async () => {
@@ -306,6 +396,7 @@ function App() {
     if (it.data) setItems(it.data);
     if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
     if (bs.data) setBusy(bs.data);
+    setLoadFailed(!!it.error);
     setReady(true);
   }, []);
 
@@ -356,12 +447,21 @@ function App() {
           settings={settings}
           busy={busy}
           ready={ready}
-          onAdmin={() => setRoute('admin')}
+          loadFailed={loadFailed}
+          onRetry={() => { setReady(false); loadPublic(); }}
+          onAdmin={goAdmin}
           onBooked={(row) => setBusy((prev) => [...prev, { day: row.day, slot: row.slot }])}
         />
       ) : (
         <Admin
           session={session}
+          authReady={authReady}
+          recovering={recovering}
+          linkProblem={linkProblem}
+          onRecovered={() => {
+            setRecovering(false);
+            pushToast('Nouveau mot de passe enregistré.');
+          }}
           items={items}
           setItems={setItems}
           bookings={bookings}
@@ -371,7 +471,7 @@ function App() {
           newCount={newCount}
           reload={() => { loadPublic(); loadBookings(); }}
           pushToast={pushToast}
-          onShop={() => setRoute('shop')}
+          onShop={goShop}
         />
       )}
 
@@ -391,42 +491,119 @@ function App() {
 }
 
 /* =========================== BOUTIQUE (EN) ========================= */
+// Pensée pour le téléphone : la plupart des acheteurs arrivent par le QR
+// code de l'affiche. Une colonne, gros boutons, réservation en 2 étapes.
 
-function Shop({ items, settings, busy, ready, onAdmin, onBooked }) {
+const PRIMARY_BTN = 'w-full inline-flex items-center justify-center gap-2 font-semibold text-white rounded-xl py-3.5 '
+  + 'bg-blue-700 hover:bg-blue-800 active:bg-blue-900 disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed';
+
+// Tant qu'une fenêtre est ouverte (réservation, photo) : la page derrière
+// ne défile plus et la touche Échap la ferme.
+function useOverlay(onClose) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+}
+
+function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBooked }) {
   const [booking, setBooking] = useState(null);
+  const [photo, setPhoto] = useState(null);
   const available = items.filter((i) => i.status !== 'sold');
 
+  const steps = [
+    ['Pick an item', 'Tap “Book a viewing” under the one you want.'],
+    ['Book a time', 'Choose a day, leave your first name and number.'],
+    ['Pick up & pay', `I text you to confirm. Pay by ${settings.payment}.`],
+  ];
+
   return (
-    <div>
+    <div className="min-h-screen bg-slate-50">
       <header className="bg-blue-800 text-white">
-        <div className="max-w-5xl mx-auto px-5 py-12 sm:py-16">
-          <p className="text-blue-200 text-sm mb-3">Everything must go before 20 November</p>
-          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight max-w-2xl">
-            My furniture is looking for a new home
-          </h1>
-          <p className="mt-4 text-blue-100 max-w-xl leading-relaxed">
-            My internship ends on 20 November and I am leaving, so everything below has to go
-            and prices are low. Pick a time that works for you and leave your first name and
-            phone number — I will send you a message to confirm the appointment.
+        <div className="max-w-5xl mx-auto px-5 pt-9 pb-16 sm:pt-14 sm:pb-20">
+          <p className="text-blue-200 text-sm font-medium">Moving out of Odense on 20 November</p>
+          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight mt-1">Furniture for sale</h1>
+          <p className="mt-3 text-blue-100 text-lg leading-relaxed max-w-xl">
+            My internship is ending, so everything has to go and prices are low.
           </p>
-          <p className="mt-3 text-blue-200 max-w-xl leading-relaxed">
-            Pickup only. Payment by MobilePay or Revolut.
-          </p>
+          <div className="mt-5 flex flex-wrap gap-2 text-sm">
+            {settings.address && (
+              <a href="#where" className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1.5">
+                <Icon name="pin" className="w-4 h-4" /> {settings.address}
+              </a>
+            )}
+            {settings.payment && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
+                <Icon name="card" className="w-4 h-4" /> {settings.payment}
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-5 py-10">
+      <div className="max-w-5xl mx-auto px-5 -mt-10 sm:-mt-12">
+        <ol className="bg-white rounded-2xl border border-slate-200 shadow-sm grid grid-cols-3 divide-x divide-slate-100">
+          {steps.map(([title, text], i) => (
+            <li key={title} className="px-2 py-4 sm:p-5 text-center sm:text-left">
+              <span className="w-8 h-8 rounded-full bg-blue-700 text-white font-bold inline-flex items-center justify-center">
+                {i + 1}
+              </span>
+              <p className="mt-2 font-semibold text-sm sm:text-base leading-tight">{title}</p>
+              <p className="hidden sm:block mt-1 text-sm text-slate-500 leading-snug">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <main className="max-w-5xl mx-auto px-5 pt-10 pb-12">
+        <div className="flex items-baseline justify-between gap-3 mb-4">
+          <h2 className="display font-bold text-2xl">What’s for sale</h2>
+          {ready && available.length > 0 && (
+            <span className="text-sm text-slate-500">{available.length} item{available.length > 1 ? 's' : ''}</span>
+          )}
+        </div>
+
         {!ready ? (
-          <p className="text-slate-500">Loading…</p>
+          <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading">
+            {[0, 1].map((i) => (
+              <li key={i} className="bg-white rounded-2xl border border-slate-200 overflow-hidden animate-pulse">
+                <div className="aspect-[4/3] bg-slate-100" />
+                <div className="p-4 space-y-3">
+                  <div className="h-6 bg-slate-100 rounded w-2/3" />
+                  <div className="h-4 bg-slate-100 rounded w-1/2" />
+                  <div className="h-12 bg-slate-100 rounded-xl" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : loadFailed && available.length === 0 ? (
+          <div className="border border-dashed border-blue-200 rounded-2xl bg-white px-6 py-14 text-center">
+            <h3 className="display font-bold text-xl mb-1">Couldn’t load the list</h3>
+            <p className="text-slate-600">Check your connection and try again in a moment.</p>
+            <button onClick={onRetry}
+                    className="mt-5 inline-flex items-center gap-2 font-semibold border border-blue-200 text-blue-800 rounded-xl px-5 py-3 hover:bg-blue-50">
+              <Icon name="refresh" className="w-4 h-4" /> Try again
+            </button>
+          </div>
         ) : available.length === 0 ? (
-          <div className="border border-dashed border-blue-200 rounded-xl bg-blue-50 px-6 py-14 text-center">
-            <h2 className="display font-bold text-xl mb-1">Nothing listed right now</h2>
+          <div className="border border-dashed border-blue-200 rounded-2xl bg-white px-6 py-14 text-center">
+            <h3 className="display font-bold text-xl mb-1">Nothing listed right now</h3>
             <p className="text-slate-600">Check back soon — items are added as I pack up.</p>
           </div>
         ) : (
-          <ul className="divide-y divide-blue-100 border-t border-blue-100">
+          <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {available.map((item) => (
-              <ItemRow key={item.id} item={item} onBook={() => setBooking(item)} />
+              <ItemCard key={item.id} item={item}
+                        onBook={() => setBooking(item)}
+                        onPhoto={() => setPhoto(item)} />
             ))}
           </ul>
         )}
@@ -434,63 +611,73 @@ function Shop({ items, settings, busy, ready, onAdmin, onBooked }) {
         <PickupMap address={settings.address} />
       </main>
 
-      <footer className="border-t border-slate-200 mt-8">
+      <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-5xl mx-auto px-5 py-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-          <span>Pickup only. {settings.payment}.</span>
+          <span>Pickup only · {settings.payment}</span>
           <button onClick={onAdmin}
-                  className="inline-flex items-center gap-1.5 text-blue-700 hover:text-blue-900 hover:underline">
+                  className="inline-flex items-center gap-1.5 text-slate-400 hover:text-blue-700">
             <Icon name="lock" className="w-3.5 h-3.5" /> Seller access
           </button>
         </div>
       </footer>
 
       {booking && (
-        <BookingDialog
+        <BookingSheet
           item={booking}
           busy={busy}
           settings={settings}
           onClose={() => setBooking(null)}
-          onConfirm={onBooked}
+          onTaken={onBooked}
+        />
+      )}
+      {photo && (
+        <PhotoViewer
+          item={photo}
+          onClose={() => setPhoto(null)}
+          onBook={() => { setPhoto(null); setBooking(photo); }}
         />
       )}
     </div>
   );
 }
 
-function ItemRow({ item, onBook }) {
+function ItemCard({ item, onBook, onPhoto }) {
   const links = Array.isArray(item.links) ? item.links : [];
+  const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
   return (
-    <li className="py-7 grid sm:grid-cols-[260px_1fr] gap-6 items-start">
-      <div className="rounded-lg overflow-hidden bg-blue-50 border border-blue-100 aspect-[4/3] flex items-center justify-center">
-        {item.image
-          ? <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-          : <span className="text-blue-300 text-sm">No photo</span>}
+    <li className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+      <div className="relative aspect-[4/3] bg-blue-50">
+        {item.image ? (
+          <button onClick={onPhoto} className="block w-full h-full" aria-label={`Bigger photo of ${item.title}`}>
+            <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+          </button>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-blue-300 text-sm">
+            <Icon name="image" className="w-10 h-10" /> No photo
+          </div>
+        )}
+        {from && from > todayKey() && (
+          <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-xs font-semibold bg-white text-blue-800 rounded-full px-3 py-1 shadow-sm">
+            <Icon name="calendar" className="w-3.5 h-3.5" /> Available from {fmtShort(from, { day: 'numeric', month: 'short' })}
+          </span>
+        )}
       </div>
 
-      <div>
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <h2 className="display font-bold text-2xl">{item.title}</h2>
-          <span className="text-xl font-semibold text-blue-700">{item.price || 'Free'}</span>
+      <div className="p-4 sm:p-5 flex flex-col flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="display font-bold text-xl leading-snug">{item.title}</h3>
+          <span className="display font-bold text-xl text-blue-700 whitespace-nowrap">{item.price || 'Free'}</span>
         </div>
 
         {item.condition && <p className="mt-1 text-sm text-slate-500">Condition: {item.condition}</p>}
 
-        {item.available_from && String(item.available_from).slice(0, 10) > todayKey() && (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-full px-3 py-1">
-            <Icon name="calendar" className="w-3.5 h-3.5" />
-            Available from {fmtDate(item.available_from, 'en-GB')}
-          </p>
-        )}
-
         {item.description && (
-          <p className="mt-3 text-slate-700 leading-relaxed max-w-prose whitespace-pre-line">
-            {item.description}
-          </p>
+          <p className="mt-2 text-slate-700 leading-relaxed whitespace-pre-line">{item.description}</p>
         )}
 
         {links.length > 0 && (
           <p className="mt-3 text-sm text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span>Also listed on</span>
+            <span>Also on</span>
             {links.map((l, i) => (
               <a key={i} href={l.url} target="_blank" rel="noreferrer"
                  className="inline-flex items-center gap-1 text-blue-700 hover:underline">
@@ -500,12 +687,37 @@ function ItemRow({ item, onBook }) {
           </p>
         )}
 
-        <button onClick={onBook}
-                className="mt-5 inline-flex items-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-5 py-2.5">
-          <Icon name="calendar" className="w-4 h-4" /> Book a viewing
-        </button>
+        <div className="mt-auto pt-4">
+          <button onClick={onBook} className={PRIMARY_BTN}>
+            <Icon name="calendar" className="w-5 h-5" /> Book a viewing
+          </button>
+        </div>
       </div>
     </li>
+  );
+}
+
+function PhotoViewer({ item, onClose, onBook }) {
+  useOverlay(onClose);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={onClose}
+         role="dialog" aria-modal="true" aria-label={item.title}>
+      <div className="flex items-center justify-between gap-3 px-4 py-3 text-white">
+        <p className="font-semibold truncate">{item.title}</p>
+        <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 shrink-0" aria-label="Close">
+          <Icon name="x" className="w-6 h-6" />
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 flex items-center justify-center p-2">
+        <img src={item.image} alt={item.title} className="max-w-full max-h-full object-contain" />
+      </div>
+      <div className="p-4" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onBook}
+                className="w-full max-w-md mx-auto flex items-center justify-center gap-2 font-semibold bg-white text-blue-800 rounded-xl py-3.5">
+          <Icon name="calendar" className="w-5 h-5" /> Book a viewing · {item.price || 'Free'}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -513,32 +725,31 @@ function PickupMap({ address }) {
   if (!address) return null;
   const q = encodeURIComponent(address);
   return (
-    <section className="mt-12 pt-10 border-t border-blue-100">
+    <section id="where" className="mt-12 scroll-mt-4">
       <h2 className="display font-bold text-2xl">Where to pick up</h2>
       <p className="mt-1 text-slate-600 inline-flex items-center gap-2">
         <Icon name="pin" className="w-4 h-4 text-blue-700" /> {address}
       </p>
-      <div className="mt-4 rounded-xl overflow-hidden border border-blue-100 bg-blue-50 h-72">
+      <div className="mt-4 rounded-2xl overflow-hidden border border-slate-200 bg-blue-50 h-64 sm:h-72">
         <iframe title="Pickup location" className="w-full h-full" style={{ border: 0 }} loading="lazy"
                 src={`https://maps.google.com/maps?q=${q}&z=15&output=embed`} />
       </div>
-      <a href={`https://www.google.com/maps/search/?api=1&query=${q}`} target="_blank" rel="noreferrer"
-         className="mt-3 inline-flex items-center gap-1.5 text-sm text-blue-700 hover:underline">
-        Open in Google Maps <Icon name="external" className="w-3.5 h-3.5" />
+      <a href={`https://www.google.com/maps/dir/?api=1&destination=${q}`} target="_blank" rel="noreferrer"
+         className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 font-semibold bg-white border border-blue-200 text-blue-800 rounded-xl px-5 py-3 hover:bg-blue-50">
+        <Icon name="pin" className="w-4 h-4" /> Get directions
       </a>
     </section>
   );
 }
 
-function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
+function BookingSheet({ item, busy, settings, onClose, onTaken }) {
   const plan = scheduleFor(item, settings);
-  const opening = (() => {
-    const first = plan.start <= LAST_DAY ? plan.start : LAST_DAY;
-    const [y, m] = first.split('-').map(Number);
-    return { y, m: m - 1 };
-  })();
-  const [cursor, setCursor] = useState(opening);
-  const [day, setDay] = useState(null);
+  const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
+  const days = bookableDays(plan, taken);
+
+  const [step, setStep] = useState(1);
+  // Le premier jour libre est déjà choisi : les heures s'affichent tout de suite.
+  const [day, setDay] = useState(() => days[0] || null);
   const [slot, setSlot] = useState(null);
   const [firstName, setFirstName] = useState('');
   const [phone, setPhone] = useState('');
@@ -546,22 +757,35 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(null);
+  const bodyRef = useRef(null);
+  const timesRef = useRef(null);
+  useOverlay(onClose);
 
-  const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
-  const slots = plan.slots;
-  const cells = monthDays(cursor.y, cursor.m);
-  const isOpen = (d, k) =>
-    plan.weekdays[(d.getDay() + 6) % 7] &&
-    !plan.closed.has(k) &&
-    k >= plan.start &&
-    (!plan.until || k <= plan.until);
+  const times = day ? slotsFor(day, plan, taken) : [];
+  const tKey = todayKey();
+  const tomorrow = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return toKey(t); })();
+
+  // Chaque nouvel écran repart du haut.
+  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [step, done]);
+
+  const pickDay = (k) => {
+    setDay(k);
+    setSlot(null);
+    setError('');
+    if (timesRef.current) timesRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  const backToTimes = (message) => {
+    setSlot(null);
+    setStep(1);
+    setError(message || '');
+  };
 
   const submit = async () => {
-    if (!day || !slot) return setError('Pick a day and a time first.');
     if (firstName.trim().length < 2) return setError('Please enter your first name.');
     if (phone.replace(/\D/g, '').length < 6) return setError('Please enter a valid phone number.');
     if (!payment) return setError('Please choose how you will pay.');
-    if (taken.has(`${day} ${slot}`)) return setError('That slot was just taken, please pick another one.');
+    if (taken.has(`${day} ${slot}`)) return backToTimes('Sorry, that time was just taken. Please pick another one.');
     setError('');
     setSending(true);
     const row = {
@@ -576,152 +800,222 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
     };
     const { error: err } = await sb.from('bookings').insert(row);
     setSending(false);
+    // 23505 = quelqu'un d'autre a réservé ce créneau entre-temps.
+    if (err && err.code === '23505') {
+      onTaken(row);
+      return backToTimes('Sorry, someone just took that time. Please pick another one.');
+    }
     if (err) return setError('Something went wrong. Please try again.');
-    onConfirm(row);
+    onTaken(row);
     setDone(row);
   };
 
-  return (
-    <div className="fixed inset-0 z-40 bg-slate-900 bg-opacity-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto"
-         onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-lg my-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-slate-100">
-          <div>
-            <h3 className="display font-bold text-xl">{done ? 'You’re booked' : 'Book a viewing'}</h3>
-            <p className="text-sm text-slate-500 mt-0.5">{item.title}</p>
-            {!done && (plan.from > todayKey() || plan.until) && (
-              <p className="text-sm text-blue-700 mt-1">
-                {plan.from > todayKey() && `Available from ${fmtDate(plan.from, 'en-GB')}`}
-                {plan.from > todayKey() && plan.until && ' — '}
-                {plan.until && `last day ${fmtDate(plan.until, 'en-GB')}`}
-              </p>
-            )}
+  const dayChip = (k) => {
+    const on = k === day;
+    const sub = on ? 'text-blue-100' : 'text-slate-500';
+    return (
+      <button key={k} onClick={() => pickDay(k)} aria-pressed={on}
+              className={`snap-start shrink-0 w-[4.75rem] rounded-xl border py-2.5 text-center ${
+                on ? 'bg-blue-700 border-blue-700 text-white'
+                   : 'bg-white border-slate-200 text-slate-800 hover:border-blue-400'}`}>
+        <span className={`block text-xs font-medium ${sub}`}>
+          {k === tKey ? 'Today' : k === tomorrow ? 'Tomorrow' : fmtShort(k, { weekday: 'short' })}
+        </span>
+        <span className="block text-xl font-bold leading-tight">{keyToDate(k).getDate()}</span>
+        <span className={`block text-xs ${sub}`}>{fmtShort(k, { month: 'short' })}</span>
+      </button>
+    );
+  };
+
+  const stepOne = (
+    <div>
+      <h3 className="font-semibold text-lg">Which day can you come?</h3>
+      {days.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-center text-slate-600">
+          Sorry, there are no free times left for this item.
+        </p>
+      ) : (
+        <>
+          <div className="mt-3 -mx-5 px-5 scroll-px-5 flex gap-2 overflow-x-auto snap-x no-scrollbar pb-1 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
+            {days.map(dayChip)}
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1" aria-label="Close">
-            <Icon name="x" className="w-5 h-5" />
+          {days.length > 4 && <p className="mt-1.5 text-xs text-slate-400 sm:hidden">Swipe for more days →</p>}
+        </>
+      )}
+
+      {day && (
+        <div ref={timesRef} className="mt-7 scroll-mt-4">
+          <h3 className="font-semibold text-lg">What time?</h3>
+          <p className="text-sm text-slate-500">{fmtDate(day, 'en-GB')}</p>
+          <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {times.map(({ time, free }) => {
+              const on = slot === time;
+              return (
+                <button key={time} disabled={!free} aria-pressed={on}
+                        onClick={() => { setSlot(time); setError(''); }}
+                        className={`py-3 rounded-xl border text-base font-semibold ${
+                          !free ? 'border-slate-100 text-slate-300 line-through cursor-not-allowed'
+                                : on ? 'bg-blue-700 border-blue-700 text-white'
+                                     : 'bg-white border-slate-200 text-slate-800 hover:border-blue-400'}`}>
+                  {time}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const field = 'mt-1.5 w-full border border-slate-300 rounded-xl px-4 py-3 text-base bg-white';
+  const stepTwo = (
+    <div>
+      <button onClick={() => backToTimes()}
+              className="w-full text-left rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 flex items-center gap-3">
+        <Icon name="calendar" className="w-5 h-5 text-blue-700 shrink-0" />
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold">{fmtShort(day)} at {slot}</span>
+          {settings.address && <span className="block text-sm text-slate-600 truncate">Pickup at {settings.address}</span>}
+        </span>
+        <span className="text-sm font-semibold text-blue-700">Change</span>
+      </button>
+
+      <label className="block mt-6">
+        <span className="font-semibold">Your first name</span>
+        <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
+               autoComplete="given-name" className={field} placeholder="Marie" />
+      </label>
+
+      <label className="block mt-4">
+        <span className="font-semibold">Your phone number</span>
+        <span className="block text-sm text-slate-500">I will text you on it to confirm.</span>
+        <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+               autoComplete="tel" className={field} placeholder="+45 12 34 56 78" />
+      </label>
+
+      <fieldset className="mt-6">
+        <legend className="font-semibold">How will you pay?</legend>
+        <span className="block text-sm text-slate-500">Nothing to pay now — you pay when you pick it up.</span>
+        <div className="mt-2 grid gap-2" role="radiogroup">
+          {PAYMENT_METHODS.map((m) => {
+            const on = payment === m.id;
+            return (
+              <button key={m.id} role="radio" aria-checked={on}
+                      onClick={() => { setPayment(m.id); setError(''); }}
+                      className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left ${
+                        on ? 'border-blue-700 bg-blue-50 ring-1 ring-blue-700' : 'border-slate-300 bg-white'}`}>
+                <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  on ? 'border-blue-700' : 'border-slate-300'}`}>
+                  {on && <span className="w-2.5 h-2.5 rounded-full bg-blue-700" />}
+                </span>
+                <span className="font-medium">{m.en}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+    </div>
+  );
+
+  const q = encodeURIComponent(settings.address || '');
+  const doneView = done && (
+    <div className="px-5 py-8">
+      <div className="text-center">
+        <div className="w-16 h-16 rounded-full bg-green-100 text-green-700 flex items-center justify-center mx-auto">
+          <Icon name="check" className="w-8 h-8" />
+        </div>
+        <h3 className="display font-bold text-2xl mt-4">Thanks {done.first_name}!</h3>
+        <p className="mt-2 text-slate-600 leading-relaxed">
+          Your booking is sent. I will text you on{' '}
+          <strong className="text-slate-900 whitespace-nowrap">{done.phone}</strong> to confirm.
+        </p>
+      </div>
+
+      <ul className="mt-6 rounded-2xl border border-slate-200 divide-y divide-slate-100">
+        <li className="flex items-start gap-3 px-4 py-3">
+          <Icon name="calendar" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+          <span>
+            <span className="block font-semibold">{fmtDate(done.day, 'en-GB')}</span>
+            <span className="block text-sm text-slate-500">at {done.slot} · {item.title}</span>
+          </span>
+        </li>
+        {settings.address && (
+          <li className="flex items-start gap-3 px-4 py-3">
+            <Icon name="pin" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+            <span>
+              <span className="block font-semibold">{settings.address}</span>
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${q}`} target="_blank" rel="noreferrer"
+                 className="text-sm text-blue-700 hover:underline">Get directions</a>
+            </span>
+          </li>
+        )}
+        {paymentLabel(done.payment, 'en') && (
+          <li className="flex items-start gap-3 px-4 py-3">
+            <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+            <span>
+              <span className="block font-semibold">{item.price || 'Free'}</span>
+              <span className="block text-sm text-slate-500">Pay on pickup by {paymentLabel(done.payment, 'en')}</span>
+            </span>
+          </li>
+        )}
+      </ul>
+      <p className="mt-4 text-center text-sm text-slate-500">Tip: take a screenshot to keep the time and address.</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-40 sm:bg-slate-900/50 sm:flex sm:items-center sm:justify-center sm:p-4"
+         onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`Book a viewing: ${item.title}`}
+           className="bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
+           onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
+          {step === 2 && !done ? (
+            <button onClick={() => backToTimes()} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
+              <Icon name="left" className="w-6 h-6" />
+            </button>
+          ) : <span className="w-11" />}
+          <div className="flex-1 text-center min-w-0">
+            <p className="font-semibold truncate">{done ? 'Booking sent' : 'Book a viewing'}</p>
+            {!done && <p className="text-xs text-slate-500">Step {step} of 2</p>}
+          </div>
+          <button onClick={onClose} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Close">
+            <Icon name="x" className="w-6 h-6" />
           </button>
         </div>
 
-        {done ? (
-          <div className="px-6 py-8 text-center">
-            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-4">
-              <Icon name="check" className="w-6 h-6" />
-            </div>
-            <p className="text-slate-800 leading-relaxed">
-              Thanks {done.first_name} — I will send you a message to confirm your visit on{' '}
-              <strong>{fmtDate(done.day, 'en-GB')}</strong> at <strong>{done.slot}</strong>.
-            </p>
-            <p className="text-sm text-slate-500 mt-2">I will write to you on {done.phone}.</p>
-            {paymentLabel(done.payment, 'en') && (
-              <p className="text-sm text-slate-500 mt-1">
-                Payment on pickup by <strong>{paymentLabel(done.payment, 'en')}</strong>.
-              </p>
-            )}
-            <button onClick={onClose} className="mt-6 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-5 py-2.5">
-              Back to the list
-            </button>
-          </div>
-        ) : (
-          <div className="px-6 py-5">
-            <div className="flex items-center justify-between mb-3">
-              <button onClick={() => setCursor(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }))}
-                      className="p-1.5 rounded hover:bg-blue-50 text-blue-700" aria-label="Previous month">
-                <Icon name="left" className="w-5 h-5" />
-              </button>
-              <span className="font-semibold">
-                {new Date(cursor.y, cursor.m, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
-              </span>
-              <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-                      disabled={cursorKey(cursor) >= LAST_MONTH}
-                      className="p-1.5 rounded text-blue-700 enabled:hover:bg-blue-50 disabled:text-slate-200 disabled:cursor-not-allowed"
-                      aria-label="Next month">
-                <Icon name="right" className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="py-1">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {cells.map((d, i) => {
-                if (!d) return <div key={i} />;
-                const k = toKey(d);
-                const off = !isOpen(d, k);
-                const on = k === day;
-                return (
-                  <button key={i} disabled={off}
-                          onClick={() => { setDay(k); setSlot(null); }}
-                          className={`h-10 rounded-lg text-sm ${
-                            off ? 'text-slate-300 cursor-not-allowed'
-                                : on ? 'bg-blue-700 text-white font-semibold'
-                                     : 'hover:bg-blue-50 text-slate-700'}`}>
-                    {d.getDate()}
-                  </button>
-                );
-              })}
-            </div>
-
-            {day && (
-              <div className="mt-5">
-                <p className="text-sm text-slate-500 mb-2">Times on {fmtDate(day, 'en-GB')}</p>
-                <div className="flex flex-wrap gap-2">
-                  {slots.map((s) => {
-                    const full = taken.has(`${day} ${s}`);
-                    const on = slot === s;
-                    return (
-                      <button key={s} disabled={full} onClick={() => setSlot(s)}
-                              className={`px-3 py-2 rounded-lg text-sm border ${
-                                full ? 'border-slate-100 text-slate-300 line-through cursor-not-allowed'
-                                     : on ? 'bg-blue-700 border-blue-700 text-white'
-                                          : 'border-blue-200 text-blue-800 hover:bg-blue-50'}`}>
-                        {s}
-                      </button>
-                    );
-                  })}
+        <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain">
+          {done ? doneView : (
+            <div className="px-5 py-5">
+              <div className="flex items-center gap-3 pb-5 mb-5 border-b border-slate-100">
+                <div className="w-14 h-14 rounded-xl bg-blue-50 overflow-hidden shrink-0 flex items-center justify-center">
+                  {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                              : <Icon name="image" className="w-6 h-6 text-blue-300" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold leading-snug">{item.title}</p>
+                  <p className="text-blue-700 font-semibold">{item.price || 'Free'}</p>
                 </div>
               </div>
-            )}
-
-            <div className="mt-5 grid sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-sm text-slate-600">First name</span>
-                <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
-                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Marie" />
-              </label>
-              <label className="block">
-                <span className="text-sm text-slate-600">Phone number</span>
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
-                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="+45 12 34 56 78" />
-              </label>
+              {step === 1 ? stepOne : stepTwo}
             </div>
+          )}
+        </div>
 
-            <div className="mt-4">
-              <span className="text-sm text-slate-600">How will you pay?</span>
-              <div className="mt-1.5 grid sm:grid-cols-2 gap-2">
-                {PAYMENT_METHODS.map((m) => {
-                  const on = payment === m.id;
-                  return (
-                    <button key={m.id} onClick={() => { setPayment(m.id); setError(''); }}
-                            aria-pressed={on}
-                            className={`px-3 py-2.5 rounded-lg text-sm border text-left ${
-                              on ? 'bg-blue-700 border-blue-700 text-white font-semibold'
-                                 : 'border-blue-200 text-blue-800 hover:bg-blue-50'}`}>
-                      {m.en}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-slate-500 mt-1.5">Nothing to pay now — you pay when you pick the furniture up.</p>
-            </div>
-
-            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-
-            <button onClick={submit} disabled={sending}
-                    className="mt-5 w-full font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-3">
-              {sending ? 'Booking…' : 'Confirm booking'}
+        <div className="border-t border-slate-200 bg-white px-5 py-3 shrink-0">
+          {error && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
+          {done ? (
+            <button onClick={onClose} className={PRIMARY_BTN}>Back to the list</button>
+          ) : step === 1 ? (
+            <button onClick={() => setStep(2)} disabled={!slot} className={PRIMARY_BTN}>
+              {slot ? `Continue · ${fmtShort(day)} at ${slot}` : day ? 'Pick a time' : 'Pick a day'}
             </button>
-          </div>
-        )}
+          ) : (
+            <button onClick={submit} disabled={sending} className={PRIMARY_BTN}>
+              {sending ? 'Sending…' : 'Book this time'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -729,36 +1023,46 @@ function BookingDialog({ item, busy, settings, onClose, onConfirm }) {
 
 /* ============================ ADMIN (FR) =========================== */
 
-function Admin({ session, items, setItems, bookings, setBookings, settings, setSettings,
+function Admin({ session, authReady, recovering, linkProblem, onRecovered,
+                 items, setItems, bookings, setBookings, settings, setSettings,
                  newCount, reload, pushToast, onShop }) {
   const [tab, setTab] = useState('annonces');
 
-  if (!session) return <Login onShop={onShop} />;
+  if (!authReady) {
+    return <p className="min-h-screen flex items-center justify-center text-slate-500">Chargement…</p>;
+  }
+  // Arrivée par le lien « mot de passe oublié » : on choisit le nouveau d'abord.
+  if (session && recovering) {
+    return <NewPassword email={session.user && session.user.email} onDone={onRecovered} />;
+  }
+  if (!session) return <Login onShop={onShop} linkProblem={linkProblem} />;
 
   return (
     <div>
       <header className="border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
-          <h1 className="display font-bold text-lg">Gestion des meubles</h1>
-          <div className="flex items-center gap-2">
-            <button onClick={reload} title="Actualiser"
+        <div className="max-w-5xl mx-auto px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
+          <h1 className="display font-bold text-lg truncate">Gestion des meubles</h1>
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={reload} title="Actualiser" aria-label="Actualiser"
                     className="p-2 rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700">
               <Icon name="refresh" className="w-4 h-4" />
             </button>
-            <button onClick={onShop} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 px-2 py-2">
-              <Icon name="store" className="w-4 h-4" /> Boutique
+            <button onClick={onShop} title="Boutique" aria-label="Boutique"
+                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 p-2">
+              <Icon name="store" className="w-4 h-4" /> <span className="hidden sm:inline">Boutique</span>
             </button>
-            <button onClick={() => sb.auth.signOut()} className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 px-2 py-2">
-              <Icon name="logout" className="w-4 h-4" /> Déconnexion
+            <button onClick={() => sb.auth.signOut()} title="Déconnexion" aria-label="Déconnexion"
+                    className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-blue-700 p-2">
+              <Icon name="logout" className="w-4 h-4" /> <span className="hidden sm:inline">Déconnexion</span>
             </button>
           </div>
         </div>
-        <div className="max-w-5xl mx-auto px-5 flex gap-1">
+        <div className="max-w-5xl mx-auto px-2 sm:px-5 flex gap-1 overflow-x-auto no-scrollbar">
           {[['annonces', 'Annonces', items.filter((i) => i.status !== 'sold').length],
             ['rdv', 'Rendez-vous', newCount],
             ['planning', 'Planning', 0]].map(([id, label, count]) => (
             <button key={id} onClick={() => setTab(id)}
-                    className={`px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-2 ${
+                    className={`px-3 sm:px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-2 whitespace-nowrap ${
                       tab === id ? 'border-blue-700 text-blue-800'
                                  : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
               {label}
@@ -771,7 +1075,7 @@ function Admin({ session, items, setItems, bookings, setBookings, settings, setS
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-5 py-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8">
         {tab === 'annonces' && <ItemsPanel items={items} setItems={setItems} pushToast={pushToast} />}
         {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
@@ -785,11 +1089,18 @@ function authErrorMessage(err) {
   if (m.includes('email not confirmed'))
     return 'Le compte existe mais n’est pas confirmé. Dans Supabase : Authentication > Users, ouvre l’utilisateur et confirme-le, ou supprime-le et recrée-le en cochant « Auto Confirm User ».';
   if (m.includes('invalid login credentials'))
-    return 'E-mail ou mot de passe incorrect. Attention : ce n’est pas le mot de passe de la base de données, mais celui du compte créé dans Authentication > Users.';
+    return 'E-mail ou mot de passe incorrect. C’est le mot de passe du compte créé dans Authentication > Users, pas celui de la base. Oublié ? Utilise le lien juste en dessous.';
   if (m.includes('failed to fetch') || m.includes('networkerror') || m.includes('load failed'))
-    return 'Supabase est injoignable. Vérifie l’URL du projet dans index.html.';
+    return 'Supabase est injoignable. Si la boutique n’affiche plus aucun meuble non plus, le projet est sûrement en pause : sur supabase.com, ouvre le projet et clique sur « Restore project ».';
   if (m.includes('api key') || m.includes('apikey') || m.includes('jwt'))
     return 'Clé anon invalide. Recopie-la depuis Project Settings > Data API.';
+  // Le service d'e-mail intégré de Supabase n'écrit qu'aux membres de l'équipe du projet.
+  if (m.includes('not authorized'))
+    return 'Supabase refuse d’envoyer l’e-mail à cette adresse : son service gratuit n’écrit qu’aux membres de ton organisation Supabase. Change plutôt le mot de passe avec reset-mot-de-passe.sql.';
+  if (m.includes('email rate limit'))
+    return 'Supabase a atteint sa limite d’e-mails (quelques-uns par heure en gratuit). Réessaie plus tard, ou change le mot de passe avec reset-mot-de-passe.sql.';
+  if (m.includes('security purposes'))
+    return 'Un lien vient déjà de partir. Attends une minute avant d’en redemander un.';
   if (m.includes('rate') || m.includes('too many'))
     return 'Trop de tentatives. Attends une minute avant de réessayer.';
   if (m.includes('disabled') || m.includes('not enabled'))
@@ -797,56 +1108,207 @@ function authErrorMessage(err) {
   return 'Connexion impossible.';
 }
 
-function Login({ onShop }) {
+function passwordErrorMessage(err) {
+  const m = String((err && err.message) || '').toLowerCase();
+  if (m.includes('different from the old'))
+    return 'C’est déjà ton mot de passe actuel. Choisis-en un autre.';
+  if (m.includes('at least') || m.includes('weak') || m.includes('short'))
+    return 'Mot de passe trop faible. Mets-en un plus long.';
+  if (m.includes('session') || m.includes('expired'))
+    return 'Le lien a expiré. Reviens à la connexion et redemande un lien.';
+  return authErrorMessage(err);
+}
+
+/* ---- briques des écrans de connexion ---- */
+
+function AuthCard({ icon, title, text, children, footer }) {
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-5 py-10">
+      <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center mb-4">
+          <Icon name={icon} className="w-6 h-6" />
+        </div>
+        <h1 className="display font-bold text-2xl">{title}</h1>
+        {text && <p className="mt-1 text-slate-500 text-sm leading-relaxed">{text}</p>}
+        {children}
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+function ErrorBox({ error, detail }) {
+  if (!error) return null;
+  return (
+    <div className="border border-red-200 bg-red-50 rounded-xl px-3 py-2.5" role="alert">
+      <p className="text-sm text-red-700 leading-relaxed">{error}</p>
+      {detail && <p className="mt-1 text-xs text-red-400 break-words">Message technique : {detail}</p>}
+    </div>
+  );
+}
+
+function PasswordField({ label, value, onChange, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="relative mt-1 block">
+        <input type={show ? 'text' : 'password'} value={value} onChange={(e) => onChange(e.target.value)}
+               autoComplete={autoComplete}
+               className="w-full border border-slate-300 rounded-xl pl-3 pr-12 py-3" />
+        <button type="button" onClick={() => setShow(!show)}
+                className="absolute inset-y-0 right-0 px-3 text-slate-500 hover:text-blue-700"
+                aria-label={show ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}>
+          <Icon name={show ? 'eyeOff' : 'eye'} className="w-5 h-5" />
+        </button>
+      </span>
+    </label>
+  );
+}
+
+function Login({ onShop, linkProblem }) {
+  // 'login' → connexion, 'forgot' → demander un lien, 'sent' → lien envoyé
+  const [mode, setMode] = useState(linkProblem ? 'forgot' : 'login');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(linkProblem
+    ? 'Ce lien a expiré ou a déjà servi. Demande un nouveau lien ci-dessous.' : '');
+  const [detail, setDetail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const cleanEmail = email.trim().toLowerCase();
+  const go = (m) => { setMode(m); setError(''); setDetail(''); };
+  const fail = (err) => { setError(authErrorMessage(err)); setDetail((err && err.message) || ''); };
+
+  const signIn = async (e) => {
+    e.preventDefault();
+    setError('');
+    setDetail('');
+    if (!cleanEmail || !password) return setError('Entre ton e-mail et ton mot de passe.');
+    setBusy(true);
+    const { error: err } = await sb.auth.signInWithPassword({ email: cleanEmail, password });
+    setBusy(false);
+    if (err) fail(err);
+  };
+
+  // Supabase envoie un e-mail dont le lien ramène sur SITE_URL, connecté,
+  // avec #type=recovery : l'écran NewPassword prend alors le relais.
+  const sendLink = async (e) => {
+    e.preventDefault();
+    setError('');
+    setDetail('');
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) return setError('Entre l’adresse e-mail du compte vendeur.');
+    setBusy(true);
+    const { error: err } = await sb.auth.resetPasswordForEmail(cleanEmail, { redirectTo: SITE_URL });
+    setBusy(false);
+    if (err) return fail(err);
+    setMode('sent');
+  };
+
+  const footer = (
+    <button onClick={onShop} className="mt-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-blue-700">
+      <Icon name="store" className="w-4 h-4" /> Retour à la boutique
+    </button>
+  );
+
+  const emailField = (
+    <label className="block">
+      <span className="text-sm font-medium text-slate-700">E-mail</span>
+      <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+             autoComplete="username" autoCapitalize="none" spellCheck={false}
+             className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-3" />
+    </label>
+  );
+
+  if (mode === 'sent') {
+    return (
+      <AuthCard icon="mail" title="Regarde tes e-mails" footer={footer}
+                text={<>Si <strong className="text-slate-700">{cleanEmail}</strong> est l’adresse du compte vendeur,
+                  un e-mail vient de partir. Ouvre le lien qu’il contient : il te ramène ici pour choisir
+                  un nouveau mot de passe.</>}>
+        <ul className="mt-4 text-sm text-slate-600 space-y-1.5 list-disc pl-5">
+          <li>Regarde aussi dans les spams.</li>
+          <li>Le lien ne marche qu’une seule fois.</li>
+          <li>Rien au bout de 5 minutes ? Change le mot de passe directement dans Supabase
+              avec <code className="bg-blue-50 px-1 rounded">reset-mot-de-passe.sql</code>.</li>
+        </ul>
+        <button onClick={() => go('login')} className={`mt-6 ${PRIMARY_BTN}`}>Retour à la connexion</button>
+      </AuthCard>
+    );
+  }
+
+  if (mode === 'forgot') {
+    return (
+      <AuthCard icon="key" title="Mot de passe oublié" footer={footer}
+                text="Entre l’e-mail du compte vendeur, tu vas recevoir un lien pour choisir un nouveau mot de passe.">
+        <form onSubmit={sendLink} className="mt-6 space-y-4" noValidate>
+          {emailField}
+          <ErrorBox error={error} detail={detail} />
+          <button type="submit" disabled={busy} className={PRIMARY_BTN}>
+            {busy ? 'Envoi…' : 'Recevoir le lien'}
+          </button>
+        </form>
+        <button onClick={() => go('login')} className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-blue-700 hover:underline">
+          <Icon name="left" className="w-4 h-4" /> Je m’en souviens finalement
+        </button>
+      </AuthCard>
+    );
+  }
+
+  return (
+    <AuthCard icon="lock" title="Espace vendeur" footer={footer}
+              text="Connecte-toi pour gérer les annonces, les rendez-vous et le planning.">
+      <form onSubmit={signIn} className="mt-6 space-y-4" noValidate>
+        {emailField}
+        <PasswordField label="Mot de passe" value={password} onChange={setPassword} autoComplete="current-password" />
+        <ErrorBox error={error} detail={detail} />
+        <button type="submit" disabled={busy} className={PRIMARY_BTN}>
+          {busy ? 'Connexion…' : 'Se connecter'}
+        </button>
+      </form>
+      <button onClick={() => go('forgot')} className="mt-4 text-sm font-medium text-blue-700 hover:underline">
+        Mot de passe oublié ?
+      </button>
+    </AuthCard>
+  );
+}
+
+function NewPassword({ email, onDone }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [detail, setDetail] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const submit = async () => {
+  const submit = async (e) => {
+    e.preventDefault();
     setError('');
     setDetail('');
+    if (password.length < 6) return setError('Choisis au moins 6 caractères.');
     setBusy(true);
-    const { error: err } = await sb.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
+    const { error: err } = await sb.auth.updateUser({ password });
     setBusy(false);
     if (err) {
-      setError(authErrorMessage(err));
+      setError(passwordErrorMessage(err));
       setDetail(err.message || '');
+      return;
     }
+    onDone();
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-5">
-      <div className="w-full max-w-sm">
-        <h1 className="display font-bold text-2xl mb-1">Espace vendeur</h1>
-        <p className="text-slate-500 text-sm mb-6">
-          Connecte-toi pour gérer les annonces, les rendez-vous et le planning.
-        </p>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-               autoComplete="username"
-               className="w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Adresse e-mail" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-               onKeyDown={(e) => e.key === 'Enter' && submit()} autoComplete="current-password"
-               className="mt-3 w-full border border-slate-200 rounded-lg px-3 py-2.5" placeholder="Mot de passe" />
-        {error && (
-          <div className="mt-3 border border-red-200 bg-red-50 rounded-lg px-3 py-2.5">
-            <p className="text-sm text-red-700 leading-relaxed">{error}</p>
-            {detail && <p className="mt-1 text-xs text-red-400 break-words">Message technique : {detail}</p>}
-          </div>
-        )}
-        <button onClick={submit} disabled={busy}
-                className="mt-4 w-full font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-2.5">
-          {busy ? 'Connexion…' : 'Se connecter'}
+    <AuthCard icon="key" title="Nouveau mot de passe"
+              text={email ? <>Pour le compte <strong className="text-slate-700">{email}</strong>.</> : null}>
+      <form onSubmit={submit} className="mt-6 space-y-4" noValidate>
+        {/* aide le gestionnaire de mots de passe du téléphone à l'enregistrer */}
+        {email && <input type="email" value={email} autoComplete="username" readOnly hidden />}
+        <PasswordField label="Choisis un nouveau mot de passe" value={password} onChange={setPassword}
+                       autoComplete="new-password" />
+        <ErrorBox error={error} detail={detail} />
+        <button type="submit" disabled={busy} className={PRIMARY_BTN}>
+          {busy ? 'Enregistrement…' : 'Enregistrer et continuer'}
         </button>
-        <button onClick={onShop} className="mt-4 w-full text-sm text-slate-500 hover:text-blue-700">
-          Retour à la boutique
-        </button>
-      </div>
-    </div>
+      </form>
+    </AuthCard>
   );
 }
 
@@ -1124,7 +1586,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
       ) : (
         <ul className="divide-y divide-slate-100 border-t border-slate-100">
           {items.map((item) => (
-            <li key={item.id} className="py-4 flex items-center gap-4">
+            <li key={item.id} className="py-4 flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2">
               <div className="w-20 h-16 rounded-lg bg-blue-50 border border-blue-100 overflow-hidden shrink-0 flex items-center justify-center">
                 {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
                             : <Icon name="image" className="w-5 h-5 text-blue-200" />}
@@ -1146,7 +1608,8 @@ function ItemsPanel({ items, setItems, pushToast }) {
                   ].filter(Boolean).join(' · ')}
                 </p>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              {/* sur téléphone, les boutons passent sous la ligne */}
+              <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
                 <button onClick={() => toggleSold(item)}
                         className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
                   {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
