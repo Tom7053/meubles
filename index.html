@@ -72,6 +72,7 @@
   .pst-list.is-compact li { font-size: 12.5pt; padding: 2.4mm 0; }
   .pst-list.is-cols { column-count: 2; column-gap: 10mm; }
   .pst-name { font-weight: 500; }
+  .pst-qty { font-weight: 400; color: #5b6b82; }
   .pst-dots { flex: 1; min-width: 4mm; border-bottom: 1.5px dotted #b9c9e6; transform: translateY(-4px); }
   .pst-price { font-weight: 600; color: #1d4ed8; white-space: nowrap; }
   .pst-more { margin: 5mm 0 0; font-size: 12.5pt; color: #5b6b82; }
@@ -190,6 +191,21 @@ function withKr(raw) {
 
 // Le prix vu par les acheteurs : sans prix, c'est gratuit.
 const showPrice = (raw) => withKr(raw) || 'Free';
+
+/* ------------------------- plusieurs exemplaires -------------------- */
+// Un meuble peut exister en plusieurs exemplaires identiques (2 lits) :
+// `quantity` est le nombre mis en vente, `sold_qty` combien sont partis.
+// Un meuble passé « vendu » d'un coup compte comme entièrement vendu.
+// Avant migration-quantite.sql les colonnes n'existent pas : 1 exemplaire.
+const totalQty = (item) => Math.max(1, parseInt(item.quantity, 10) || 1);
+const soldQty = (item) =>
+  item.status === 'sold' ? totalQty(item) : Math.min(totalQty(item), parseInt(item.sold_qty, 10) || 0);
+const leftQty = (item) => totalQty(item) - soldQty(item);
+
+// Prix pour `count` exemplaires : « 900 kr », ou le prix tel quel s'il
+// n'y a pas de nombre dedans (gratuit…).
+const priceFor = (raw, count) =>
+  count > 1 && priceValue(raw) > 0 ? fmtKr(priceValue(raw) * count) : showPrice(raw);
 
 /* ---------------------------- fin de vente -------------------------- */
 // Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
@@ -494,7 +510,7 @@ function App() {
         const b = payload.new;
         setBookings((prev) => (prev.some((x) => x.id === b.id) ? prev : [...prev, b]));
         setBusy((prev) => [...prev, { day: b.day, slot: b.slot }]);
-        pushToast(`Nouveau rendez-vous — ${b.first_name}, ${fmtDate(b.day, 'fr-FR')} à ${b.slot}`, 'new');
+        pushToast(`Nouveau rendez-vous — ${b.first_name}${b.quantity > 1 ? ` (${b.quantity} × ${b.item_title})` : ''}, ${fmtDate(b.day, 'fr-FR')} à ${b.slot}`, 'new');
       })
       .subscribe();
     return () => { sb.removeChannel(channel); };
@@ -720,6 +736,7 @@ function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBo
 function ItemCard({ item, onBook, onPhoto }) {
   const links = Array.isArray(item.links) ? item.links : [];
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
+  const several = totalQty(item) > 1;
   return (
     <li className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
       <div className="relative aspect-[4/3] bg-blue-50">
@@ -742,10 +759,23 @@ function ItemCard({ item, onBook, onPhoto }) {
       <div className="p-4 sm:p-5 flex flex-col flex-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="display font-bold text-xl leading-snug">{item.title}</h3>
-          <span className="display font-bold text-xl text-blue-700 whitespace-nowrap">{showPrice(item.price)}</span>
+          <span className="shrink-0 text-right">
+            <span className="block display font-bold text-xl text-blue-700 whitespace-nowrap">{showPrice(item.price)}</span>
+            {several && priceValue(item.price) > 0 && <span className="block text-xs text-slate-500">each</span>}
+          </span>
         </div>
 
-        {item.condition && <p className="mt-1 text-sm text-slate-500">Condition: {item.condition}</p>}
+        {(several || item.condition) && (
+          <p className="mt-1 text-sm text-slate-500">
+            {several && (
+              <span className="font-semibold text-blue-800">
+                {leftQty(item) > 1 ? `${leftQty(item)} available` : 'Last one left'}
+              </span>
+            )}
+            {several && item.condition && ' · '}
+            {item.condition && `Condition: ${item.condition}`}
+          </p>
+        )}
 
         {item.description && (
           <p className="mt-2 text-slate-700 leading-relaxed whitespace-pre-line">{item.description}</p>
@@ -830,6 +860,9 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
   const [firstName, setFirstName] = useState('');
   const [phone, setPhone] = useState('');
   const [payment, setPayment] = useState('');
+  // Plusieurs exemplaires en vente : l'acheteur dit combien il en prend.
+  const left = leftQty(item);
+  const [count, setCount] = useState(1);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(null);
@@ -873,6 +906,9 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
       day,
       slot,
       status: 'new',
+      // Envoyé seulement s'il sert : la réservation marche même si
+      // migration-quantite.sql n'a pas encore été lancé.
+      ...(count > 1 ? { quantity: count } : {}),
     };
     const { error: err } = await sb.from('bookings').insert(row);
     setSending(false);
@@ -956,6 +992,23 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
         <span className="text-sm font-semibold text-blue-700">Change</span>
       </button>
 
+      {left > 1 && (
+        <div className="mt-6">
+          <span className="font-semibold">How many do you want?</span>
+          <span className="block text-sm text-slate-500">{left} available · {showPrice(item.price)} each</span>
+          <div className="mt-2 flex items-center gap-3">
+            <button type="button" onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1}
+                    className="w-12 h-12 rounded-xl border border-slate-300 bg-white text-2xl font-semibold text-slate-700 disabled:border-slate-100 disabled:text-slate-300"
+                    aria-label="One less">−</button>
+            <span className="w-8 text-center text-2xl font-bold tabular-nums" aria-live="polite">{count}</span>
+            <button type="button" onClick={() => setCount(Math.min(left, count + 1))} disabled={count >= left}
+                    className="w-12 h-12 rounded-xl border border-slate-300 bg-white text-2xl font-semibold text-slate-700 disabled:border-slate-100 disabled:text-slate-300"
+                    aria-label="One more">+</button>
+            <span className="ml-auto font-semibold text-blue-700">{priceFor(item.price, count)}</span>
+          </div>
+        </div>
+      )}
+
       <label className="block mt-6">
         <span className="font-semibold">Your first name</span>
         <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
@@ -1012,7 +1065,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
           <Icon name="calendar" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
           <span>
             <span className="block font-semibold">{fmtDate(done.day, 'en-GB')}</span>
-            <span className="block text-sm text-slate-500">at {done.slot} · {item.title}</span>
+            <span className="block text-sm text-slate-500">at {done.slot} · {count > 1 ? `${count} × ` : ''}{item.title}</span>
           </span>
         </li>
         {settings.address && (
@@ -1029,7 +1082,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
           <li className="flex items-start gap-3 px-4 py-3">
             <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
             <span>
-              <span className="block font-semibold">{showPrice(item.price)}</span>
+              <span className="block font-semibold">{priceFor(item.price, count)}</span>
               <span className="block text-sm text-slate-500">Pay on pickup by {paymentLabel(done.payment, 'en')}</span>
             </span>
           </li>
@@ -1070,7 +1123,9 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold leading-snug">{item.title}</p>
-                  <p className="text-blue-700 font-semibold">{showPrice(item.price)}</p>
+                  <p className="text-blue-700 font-semibold">
+                    {showPrice(item.price)}{left > 1 && priceValue(item.price) > 0 ? ' each' : ''}
+                  </p>
                 </div>
               </div>
               {step === 1 ? stepOne : stepTwo}
@@ -1538,17 +1593,20 @@ function describeItem(item, d) {
 
 const emptyForm = {
   id: null, title: '', price: '', condition: '', description: '',
-  links: [], image: null, status: 'available',
+  links: [], image: null, status: 'available', quantity: 1, sold_qty: 0,
   available_from: '', available_to: '', custom_schedule: false, weekdays: null, slots: null,
 };
 
 /* --------------------- objectif de vente (3000 kr) ------------------ */
 
 function GoalProgress({ items }) {
-  const sold = items.filter((i) => i.status === 'sold');
-  const listed = items.filter((i) => i.status !== 'sold');
-  const soldTotal = sold.reduce((sum, i) => sum + priceValue(i.price), 0);
-  const listedTotal = listed.reduce((sum, i) => sum + priceValue(i.price), 0);
+  // Compté par exemplaire : 2 lits à 450 kr, c'est 900 kr et 2 meubles.
+  const sum = (qty) => items.reduce((total, i) => total + priceValue(i.price) * qty(i), 0);
+  const units = (qty) => items.reduce((total, i) => total + qty(i), 0);
+  const soldCount = units(soldQty);
+  const listedCount = units(leftQty);
+  const soldTotal = sum(soldQty);
+  const listedTotal = sum(leftQty);
   const missing = Math.max(0, SALES_GOAL - soldTotal);
   const pct = (n) => Math.min(100, (n / SALES_GOAL) * 100);
   const reached = soldTotal >= SALES_GOAL;
@@ -1579,9 +1637,9 @@ function GoalProgress({ items }) {
       </div>
 
       <div className="space-y-5">
-        {bar('Vendu', sold.length, soldTotal, 'bg-blue-700', 'bg-blue-100',
+        {bar('Vendu', soldCount, soldTotal, 'bg-blue-700', 'bg-blue-100',
           `${Math.round(pct(soldTotal))} % de l’objectif`)}
-        {bar('En vente', listed.length, listedTotal, 'bg-blue-400', 'bg-blue-100',
+        {bar('En vente', listedCount, listedTotal, 'bg-blue-400', 'bg-blue-100',
           listedTotal + soldTotal >= SALES_GOAL
             ? `Tout vendre rapporterait ${fmtKr(soldTotal + listedTotal)}, l’objectif est atteignable.`
             : `Même en vendant tout (${fmtKr(soldTotal + listedTotal)}), il manquerait ${fmtKr(SALES_GOAL - soldTotal - listedTotal)}.`)}
@@ -1629,6 +1687,9 @@ function ItemsPanel({ items, setItems, pushToast }) {
   const submit = async () => {
     if (!form.title.trim()) return pushToast('Il manque le titre de l’annonce.');
     setBusy(true);
+    const quantity = Math.min(20, totalQty(form));
+    // Nombre baissé sous ce qui est déjà vendu : tout est parti.
+    const sold_qty = Math.min(quantity, soldQty(form));
     const payload = {
       title: form.title.trim(),
       price: withKr(form.price),
@@ -1636,17 +1697,24 @@ function ItemsPanel({ items, setItems, pushToast }) {
       description: form.description.trim(),
       links: (form.links || []).filter((l) => l.label.trim() && l.url.trim()),
       image: form.image,
-      status: form.status || 'available',
+      status: sold_qty >= quantity ? 'sold' : (form.status || 'available'),
       available_from: form.available_from || null,
       available_to: form.available_to || null,
       custom_schedule: !!form.custom_schedule,
       weekdays: form.custom_schedule ? (form.weekdays || DEFAULT_SETTINGS.weekdays) : null,
       slots: form.custom_schedule ? (form.slots || DEFAULT_SETTINGS.slots) : null,
     };
+    // Avant migration-quantite.sql ces colonnes n'existent pas : on ne les
+    // envoie que si la base les a déjà, ou s'il y a plusieurs exemplaires.
+    if (quantity > 1 || items.some((i) => 'quantity' in i)) Object.assign(payload, { quantity, sold_qty });
     let res;
     if (form.id) res = await sb.from('items').update(payload).eq('id', form.id).select().single();
     else res = await sb.from('items').insert(payload).select().single();
     setBusy(false);
+    // PGRST204 = colonne inconnue de la base.
+    if (res.error && res.error.code === 'PGRST204') {
+      return pushToast('Pour vendre plusieurs exemplaires, lance d’abord migration-quantite.sql dans Supabase (SQL Editor).');
+    }
     if (res.error) return pushToast('Enregistrement impossible, réessaie.');
     setItems(form.id ? items.map((i) => (i.id === form.id ? res.data : i)) : [res.data, ...items]);
     setOpen(false);
@@ -1662,12 +1730,19 @@ function ItemsPanel({ items, setItems, pushToast }) {
     pushToast('Annonce supprimée.');
   };
 
-  const toggleSold = async (item) => {
-    const status = item.status === 'sold' ? 'available' : 'sold';
-    const { error } = await sb.from('items').update({ status }).eq('id', item.id);
+  // Combien d'exemplaires sont partis. Tout vendu : l'annonce quitte la boutique.
+  const setSold = async (item, n) => {
+    const total = totalQty(item);
+    const sold_qty = Math.max(0, Math.min(total, n));
+    const status = sold_qty >= total ? 'sold' : 'available';
+    // Sans migration-quantite.sql, seul le statut existe.
+    const patch = 'sold_qty' in item ? { status, sold_qty } : { status };
+    const { error } = await sb.from('items').update(patch).eq('id', item.id);
     if (error) return pushToast('Mise à jour impossible.');
-    setItems(items.map((i) => (i.id === item.id ? { ...i, status } : i)));
-    pushToast(status === 'sold' ? 'Marquée comme vendue : retirée de la boutique.' : 'Remise en vente.');
+    setItems(items.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
+    if (status === 'sold') pushToast('Marquée comme vendue : retirée de la boutique.');
+    else if (total > 1) pushToast(`Il en reste ${total - sold_qty} sur ${total} dans la boutique.`);
+    else pushToast('Remise en vente.');
   };
 
   const onFile = async (e) => {
@@ -1693,8 +1768,8 @@ function ItemsPanel({ items, setItems, pushToast }) {
         <div className="border border-blue-200 rounded-xl bg-blue-50 p-5 mb-8">
           <h2 className="display font-bold text-lg mb-4">{form.id ? 'Modifier l’annonce' : 'Nouvelle annonce'}</h2>
 
-          <div className="grid sm:grid-cols-3 gap-3">
-            <label className="block sm:col-span-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label className="block col-span-2">
               <span className="text-sm text-slate-600">Titre</span>
               <input value={form.title} onChange={(e) => change({ ...form, title: e.target.value }, details)}
                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Bureau en chêne" />
@@ -1707,7 +1782,21 @@ function ItemsPanel({ items, setItems, pushToast }) {
                 <span className="pr-3 text-slate-500">kr</span>
               </span>
             </label>
+            <label className="block">
+              <span className="text-sm text-slate-600">Nombre</span>
+              <input type="number" min="1" max="20" inputMode="numeric" value={form.quantity}
+                     onChange={(e) => set('quantity', e.target.value)}
+                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
+            </label>
           </div>
+          {totalQty(form) > 1 && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              {totalQty(form)} exemplaires identiques, prix pour un : l’acheteur choisit combien il en prend.
+              {soldQty(form) > 0 && (leftQty(form) > 0
+                ? ` ${soldQty(form)} déjà vendu${soldQty(form) > 1 ? 's' : ''}, il en reste ${leftQty(form)}.`
+                : ' Tous sont déjà vendus.')}
+            </p>
+          )}
 
           <label className="block mt-3">
             <span className="text-sm text-slate-600">État</span>
@@ -1941,10 +2030,22 @@ function ItemsPanel({ items, setItems, pushToast }) {
               </div>
               {/* sur téléphone, les boutons passent sous la ligne */}
               <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
-                <button onClick={() => toggleSold(item)}
-                        className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
-                  {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
-                </button>
+                {totalQty(item) > 1 ? (
+                  <span className="inline-flex items-center border border-slate-200 rounded-lg text-xs">
+                    <button onClick={() => setSold(item, soldQty(item) - 1)} disabled={soldQty(item) === 0}
+                            className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
+                            aria-label="Un vendu de moins">−</button>
+                    <span className="px-1 tabular-nums">{soldQty(item)} vendu{soldQty(item) > 1 ? 's' : ''} sur {totalQty(item)}</span>
+                    <button onClick={() => setSold(item, soldQty(item) + 1)} disabled={leftQty(item) === 0}
+                            className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
+                            aria-label="Un vendu de plus">+</button>
+                  </span>
+                ) : (
+                  <button onClick={() => setSold(item, item.status === 'sold' ? 0 : 1)}
+                          className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
+                    {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
+                  </button>
+                )}
                 <button onClick={() => openForm({ ...emptyForm, ...item, links: item.links || [] })}
                         className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
                   <Icon name="pencil" className="w-4 h-4" />
@@ -2048,7 +2149,9 @@ function BookingsPanel({ bookings, setBookings, pushToast }) {
                         </span>
                       )}
                     </p>
-                    <p className="mt-1 text-sm text-slate-500">Pour : {b.item_title}</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Pour : {b.quantity > 1 && <strong className="text-slate-800">{b.quantity} × </strong>}{b.item_title}
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-1">
@@ -2419,7 +2522,9 @@ function PosterPanel({ items, settings }) {
                         {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
                                     : <Icon name="image" className="w-4 h-4 text-blue-200" />}
                       </span>
-                      <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.title}</span>
+                      <span className="flex-1 min-w-0 text-sm font-medium truncate">
+                        {item.title}{leftQty(item) > 1 && <span className="font-normal text-slate-500"> ×{leftQty(item)}</span>}
+                      </span>
                       <span className="text-sm text-blue-700 whitespace-nowrap">{showPrice(item.price)}</span>
                     </label>
                   </li>
@@ -2478,9 +2583,14 @@ function PosterPanel({ items, settings }) {
                 <ul className={`pst-list ${density}`}>
                   {onPoster.map((item) => (
                     <li key={item.id}>
-                      <span className="pst-name">{item.title}</span>
+                      <span className="pst-name">
+                        {item.title}{leftQty(item) > 1 && <span className="pst-qty"> ×{leftQty(item)}</span>}
+                      </span>
                       <span className="pst-dots" />
-                      <span className="pst-price">{showPrice(item.price)}</span>
+                      <span className="pst-price">
+                        {showPrice(item.price)}
+                        {leftQty(item) > 1 && priceValue(item.price) > 0 && <span className="pst-qty"> each</span>}
+                      </span>
                     </li>
                   ))}
                 </ul>

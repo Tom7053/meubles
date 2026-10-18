@@ -46,7 +46,11 @@ begin
       'title',    'Nouveau rendez-vous',
       'message',  new.first_name || ' — ' ||
                   to_char(new.day, 'DD/MM') || ' à ' || new.slot ||
-                  E'\n' || coalesce(new.item_title, 'Meuble') ||
+                  -- « 2 × Lit » quand l'acheteur en prend plusieurs. to_jsonb(new)
+                  -- marche même avant migration-quantite.sql.
+                  E'\n' || case when (to_jsonb(new) ->> 'quantity')::int > 1
+                                then (to_jsonb(new) ->> 'quantity') || ' × ' else '' end ||
+                  coalesce(new.item_title, 'Meuble') ||
                   E'\n' || new.phone ||
                   coalesce(E'\n' || case new.payment
                     when 'mobilepay' then 'MobilePay'
@@ -122,7 +126,9 @@ begin
         '<strong>' || new.first_name || '</strong><br>' ||
         'Téléphone : <a href="tel:' || replace(new.phone, ' ', '') || '">' || new.phone || '</a><br>' ||
         'Date : ' || to_char(new.day, 'DD/MM/YYYY') || ' à ' || new.slot || '<br>' ||
-        'Meuble : ' || coalesce(new.item_title, '—') ||
+        'Meuble : ' || case when (to_jsonb(new) ->> 'quantity')::int > 1
+                           then (to_jsonb(new) ->> 'quantity') || ' × ' else '' end ||
+        coalesce(new.item_title, '—') ||
         coalesce('<br>Paiement : ' || case new.payment
           when 'mobilepay' then 'MobilePay'
           when 'cash' then 'Espèces'
@@ -237,7 +243,9 @@ begin
         '<strong>' || new.first_name || '</strong><br>' ||
         'Téléphone : <a href="tel:' || replace(new.phone, ' ', '') || '">' || new.phone || '</a><br>' ||
         'Date : ' || to_char(new.day, 'DD/MM/YYYY') || ' à ' || new.slot || '<br>' ||
-        'Meuble : ' || coalesce(new.item_title, '—') ||
+        'Meuble : ' || case when (to_jsonb(new) ->> 'quantity')::int > 1
+                           then (to_jsonb(new) ->> 'quantity') || ' × ' else '' end ||
+        coalesce(new.item_title, '—') ||
         coalesce('<br>Paiement : ' || case new.payment
           when 'mobilepay' then 'MobilePay'
           when 'cash' then 'Espèces'
