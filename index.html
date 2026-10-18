@@ -9,13 +9,14 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <!-- =====================================================================
      LES DEUX SEULES LIGNES A REMPLIR
@@ -45,6 +46,63 @@
   /* Sous 16 px, l'iPhone zoome sur le champ dès qu'on le touche. */
   @media (max-width: 639px) {
     input, select, textarea { font-size: 16px !important; }
+  }
+
+  /* ---------- affiche A4 (onglet Affiche de l'espace vendeur) ---------- */
+  .pst-frame { background: #fff; overflow: hidden; box-shadow: 0 10px 40px rgba(22,48,122,.16); }
+  .pst-sheet {
+    width: 210mm; height: 297mm; background: #fff; color: #101a2e;
+    display: flex; flex-direction: column; overflow: hidden; transform-origin: top left;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .pst-top { padding: 20mm 18mm 0; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .pst-eyebrow { font-size: 13pt; color: #1d4ed8; margin: 0 0 10mm; display: flex; align-items: center; gap: 10px; }
+  .pst-eyebrow::before { content: ""; flex: none; width: 18mm; height: 3px; background: #1d4ed8; }
+  .pst-title {
+    font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; font-weight: 800;
+    font-size: 58pt; line-height: .94; letter-spacing: -.02em; margin: 0; color: #16307a;
+  }
+  .pst-lede { margin: 8mm 0 0; font-size: 14pt; line-height: 1.5; max-width: 150mm; color: #2b3a52; }
+  .pst-list { margin: 12mm 0 0; padding: 0; list-style: none; border-top: 2px solid #dbe6fb; }
+  .pst-list li {
+    display: flex; align-items: baseline; gap: 6px; padding: 3.6mm 0;
+    border-bottom: 1px solid #dbe6fb; font-size: 14.5pt; break-inside: avoid;
+  }
+  .pst-list.is-compact li { font-size: 12.5pt; padding: 2.4mm 0; }
+  .pst-list.is-cols { column-count: 2; column-gap: 10mm; }
+  .pst-name { font-weight: 500; }
+  .pst-dots { flex: 1; min-width: 4mm; border-bottom: 1.5px dotted #b9c9e6; transform: translateY(-4px); }
+  .pst-price { font-weight: 600; color: #1d4ed8; white-space: nowrap; }
+  .pst-more { margin: 5mm 0 0; font-size: 12.5pt; color: #5b6b82; }
+  .pst-band { background: #16307a; color: #fff; padding: 12mm 18mm; display: flex; gap: 12mm; align-items: center; flex: none; }
+  .pst-qr { background: #fff; padding: 4mm; border-radius: 4mm; line-height: 0; flex: none; }
+  .pst-qr img, .pst-qr-empty { display: block; width: 38mm; height: 38mm; }
+  .pst-qr-empty {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 9pt; color: #5b6b82; line-height: 1.35;
+  }
+  .pst-band h2 {
+    font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700;
+    font-size: 22pt; line-height: 1.15; margin: 0 0 4mm; letter-spacing: -.01em;
+  }
+  .pst-band p { margin: 0 0 2.5mm; font-size: 12.5pt; color: #cfdcff; line-height: 1.45; }
+  .pst-pay { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 5mm; }
+  .pst-pay span { border: 1.5px solid rgba(255,255,255,.45); border-radius: 99px; padding: 2mm 5mm; font-size: 11.5pt; font-weight: 500; }
+  .pst-edit { white-space: pre-line; outline: none; }
+  @media screen {
+    .pst-edit:hover, .pst-edit:focus { background: #eff5ff; border-radius: 3px; }
+    .pst-band .pst-edit:hover, .pst-band .pst-edit:focus { background: rgba(255,255,255,.12); }
+  }
+
+  /* À l'impression, seule l'affiche sort, en A4 sans marges. Le reste de
+     l'espace vendeur porte la classe Tailwind print:hidden. */
+  @page { size: A4; margin: 0; }
+  @media print {
+    html, body { background: #fff !important; }
+    .min-h-screen { min-height: 0 !important; }
+    .pst-frame { width: auto !important; height: auto !important; box-shadow: none !important; }
+    .pst-sheet { transform: none !important; }
   }
 </style>
 </head>
@@ -128,10 +186,10 @@ const LAST_MONTH = LAST_DAY.slice(0, 7); // '2026-11'
 /* ---------------------------- paiement ------------------------------ */
 // Choix obligatoire à la réservation : l'acheteur annonce comment il paiera.
 // `id` est ce qui part en base, `en` s'affiche dans la boutique (anglais),
-// `fr` dans l'espace vendeur.
+// `fr` dans l'espace vendeur, `short` sur l'affiche.
 const PAYMENT_METHODS = [
-  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay' },
-  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut' },
+  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay', short: 'MobilePay' },
+  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut', short: 'Revolut' },
 ];
 const paymentLabel = (id, lang) => {
   const m = PAYMENT_METHODS.find((p) => p.id === id);
@@ -475,7 +533,7 @@ function App() {
         />
       )}
 
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] print:hidden">
         {toasts.map((t) => (
           <div key={t.id}
                className={`rounded-lg px-4 py-3 text-sm shadow-lg border flex items-start gap-2 ${
@@ -1039,7 +1097,7 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
 
   return (
     <div>
-      <header className="border-b border-slate-200">
+      <header className="border-b border-slate-200 print:hidden">
         <div className="max-w-5xl mx-auto px-4 sm:px-5 py-3 flex items-center justify-between gap-2">
           <h1 className="display font-bold text-lg truncate">Gestion des meubles</h1>
           <div className="flex items-center gap-1 shrink-0">
@@ -1057,12 +1115,13 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
             </button>
           </div>
         </div>
-        <div className="max-w-5xl mx-auto px-2 sm:px-5 flex gap-1 overflow-x-auto no-scrollbar">
+        <div className="max-w-5xl mx-auto px-2 sm:px-5 flex sm:gap-1 overflow-x-auto no-scrollbar">
           {[['annonces', 'Annonces', items.filter((i) => i.status !== 'sold').length],
             ['rdv', 'Rendez-vous', newCount],
-            ['planning', 'Planning', 0]].map(([id, label, count]) => (
+            ['planning', 'Planning', 0],
+            ['affiche', 'Affiche', 0]].map(([id, label, count]) => (
             <button key={id} onClick={() => setTab(id)}
-                    className={`px-3 sm:px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-2 whitespace-nowrap ${
+                    className={`px-2 sm:px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap ${
                       tab === id ? 'border-blue-700 text-blue-800'
                                  : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
               {label}
@@ -1075,10 +1134,11 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8">
+      <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8 print:p-0 print:max-w-none">
         {tab === 'annonces' && <ItemsPanel items={items} setItems={setItems} pushToast={pushToast} />}
         {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
+        {tab === 'affiche' && <PosterPanel items={items} settings={settings} />}
       </main>
     </div>
   );
@@ -1886,6 +1946,237 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------ affiche ----------------------------- */
+// L'affiche A4 à imprimer, générée à partir des annonces : on coche les
+// meubles qui y figurent avec leur prix, les autres sont cités en une ligne.
+// Le choix et les textes retouchés restent enregistrés dans ce navigateur.
+
+const POSTER_PICKS_KEY = 'meubles-affiche-choix';
+const POSTER_TEXTS_KEY = 'meubles-affiche-textes';
+const A4_PX = { w: 793.7, h: 1122.5 }; // 210 × 297 mm à 96 px par pouce
+
+function readStored(key, fallback) {
+  try {
+    const v = JSON.parse(localStorage.getItem(key));
+    return v == null ? fallback : v;
+  } catch { return fallback; }
+}
+
+function writeStored(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* navigation privée */ }
+}
+
+// QR code en image, dessiné par qrcode.js dans un div jetable.
+function useQrCode(text) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    if (!text || typeof QRCode === 'undefined') { setSrc(null); return; }
+    try {
+      const box = document.createElement('div');
+      new QRCode(box, {
+        text, width: 512, height: 512,
+        colorDark: '#16307a', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      const canvas = box.querySelector('canvas');
+      setSrc(canvas ? canvas.toDataURL('image/png') : null);
+    } catch { setSrc(null); }
+  }, [text]);
+  return src;
+}
+
+// Texte modifiable directement sur l'affiche ; `children` est le texte par
+// défaut. La clé change après chaque modification : React recrée l'élément
+// au lieu de se battre avec le contentEditable.
+function PosterText({ as: Tag, field, texts, onSave, className, children }) {
+  const value = texts[field] != null ? texts[field] : children;
+  return (
+    <Tag key={value} className={`pst-edit ${className || ''}`}
+         contentEditable suppressContentEditableWarning spellCheck={false}
+         onBlur={(e) => {
+           const text = e.currentTarget.innerText.trim();
+           onSave(field, text === children ? null : text);
+         }}>
+      {value}
+    </Tag>
+  );
+}
+
+function PosterPanel({ items, settings }) {
+  const available = items.filter((i) => i.status !== 'sold');
+  const [picks, setPicks] = useState(() => readStored(POSTER_PICKS_KEY, null));
+  const [texts, setTexts] = useState(() => readStored(POSTER_TEXTS_KEY, {}));
+  const [link, setLink] = useState(SITE_URL);
+  const [scale, setScale] = useState(0.5);
+  const [overflow, setOverflow] = useState(false);
+  const frameRef = useRef(null);
+  const topRef = useRef(null);
+  const qr = useQrCode(link.trim());
+
+  // Rien d'enregistré encore : tous les meubles en vente sont cochés.
+  const picked = new Set(picks || available.map((i) => i.id));
+  const onPoster = available.filter((i) => picked.has(i.id));
+  const others = available.filter((i) => !picked.has(i.id));
+  // Plus il y a de meubles, plus la liste se resserre (puis passe sur deux colonnes).
+  const density = onPoster.length > 10 ? 'is-compact is-cols' : onPoster.length > 6 ? 'is-compact' : '';
+  const moreText = others.length
+    ? `+ ${others.slice(0, 6).map((i) => i.title).join(', ')}${others.length > 6 ? '…' : ''}`
+    : null;
+
+  const savePicks = (ids) => { setPicks(ids); writeStored(POSTER_PICKS_KEY, ids); };
+  const toggle = (id) => savePicks(picked.has(id) ? [...picked].filter((x) => x !== id) : [...picked, id]);
+  const saveText = (field, value) => {
+    const next = { ...texts };
+    if (value == null) delete next[field];
+    else next[field] = value;
+    setTexts(next);
+    writeStored(POSTER_TEXTS_KEY, next);
+  };
+  const resetTexts = () => { setTexts({}); writeStored(POSTER_TEXTS_KEY, {}); };
+  const edit = { texts, onSave: saveText };
+
+  // L'aperçu est une vraie page A4, réduite pour tenir dans l'écran.
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setScale(Math.min(1, el.clientWidth / A4_PX.w)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Prévient quand la liste ne tient plus sur la page.
+  useEffect(() => {
+    const el = topRef.current;
+    if (!el) return;
+    const check = () => setOverflow(el.scrollHeight > el.clientHeight + 2);
+    check();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
+  });
+
+  return (
+    <div className="grid lg:grid-cols-[20rem_1fr] gap-8 items-start print:block">
+      <div className="space-y-6 print:hidden">
+        <section>
+          <h2 className="display font-bold text-lg">Meubles sur l’affiche</h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Coche ceux à afficher avec leur prix. Les autres sont cités en une ligne en dessous.
+          </p>
+
+          {available.length === 0 ? (
+            <p className="mt-3 border border-dashed border-blue-200 rounded-xl px-4 py-6 text-sm text-center text-slate-600">
+              Aucun meuble en vente pour l’instant. Ajoute-les dans l’onglet Annonces.
+            </p>
+          ) : (
+            <>
+              <div className="mt-3 flex items-center gap-4 text-sm">
+                <button onClick={() => savePicks(available.map((i) => i.id))} className="text-blue-700 hover:underline">
+                  Tout cocher
+                </button>
+                <button onClick={() => savePicks([])} className="text-blue-700 hover:underline">
+                  Tout décocher
+                </button>
+                <span className="ml-auto text-slate-500">{onPoster.length} / {available.length}</span>
+              </div>
+              <ul className="mt-2 border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
+                {available.map((item) => (
+                  <li key={item.id}>
+                    <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-blue-50">
+                      <input type="checkbox" checked={picked.has(item.id)} onChange={() => toggle(item.id)}
+                             className="w-5 h-5 accent-blue-700 shrink-0" />
+                      <span className="w-10 h-10 rounded-lg bg-blue-50 overflow-hidden shrink-0 flex items-center justify-center">
+                        {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                                    : <Icon name="image" className="w-4 h-4 text-blue-200" />}
+                      </span>
+                      <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.title}</span>
+                      <span className="text-sm text-blue-700 whitespace-nowrap">{item.price || 'Free'}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate-500">Les meubles vendus disparaissent tout seuls de l’affiche.</p>
+            </>
+          )}
+        </section>
+
+        <label className="block">
+          <span className="text-sm text-slate-600">Lien du QR code</span>
+          <input type="url" value={link} onChange={(e) => setLink(e.target.value)}
+                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+        </label>
+
+        {overflow && (
+          <div className="flex gap-2 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5 text-sm text-amber-900">
+            <Icon name="alert" className="w-4 h-4 mt-0.5 shrink-0" />
+            L’affiche déborde : décoche un meuble ou raccourcis un texte.
+          </div>
+        )}
+
+        <div>
+          <button onClick={() => window.print()} disabled={onPoster.length === 0 && !moreText}
+                  className="w-full inline-flex items-center justify-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-3">
+            Imprimer / Enregistrer en PDF
+          </button>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+            Clique sur un texte de l’affiche pour le modifier. À l’impression : format A4,
+            marges « Aucune », « Graphiques d’arrière-plan » coché.
+          </p>
+          {Object.keys(texts).length > 0 && (
+            <button onClick={resetTexts} className="mt-2 text-xs text-slate-500 hover:text-blue-700 underline">
+              Remettre les textes d’origine
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div ref={frameRef} className="min-w-0">
+        <div className="pst-frame mx-auto" style={{ width: A4_PX.w * scale, height: A4_PX.h * scale }}>
+          <div className="pst-sheet" style={{ transform: `scale(${scale})` }}>
+            <div className="pst-top" ref={topRef}>
+              <p className="pst-eyebrow">
+                <PosterText as="span" field="eyebrow" {...edit}>My internship ends on 20 November</PosterText>
+              </p>
+              <PosterText as="h1" field="title" className="pst-title" {...edit}>{'Everything\nmust go'}</PosterText>
+              <PosterText as="p" field="lede" className="pst-lede" {...edit}>
+                I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.
+              </PosterText>
+
+              {onPoster.length > 0 && (
+                <ul className={`pst-list ${density}`}>
+                  {onPoster.map((item) => (
+                    <li key={item.id}>
+                      <span className="pst-name">{item.title}</span>
+                      <span className="pst-dots" />
+                      <span className="pst-price">{item.price || 'Free'}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {moreText && <p className="pst-more">{moreText}</p>}
+            </div>
+
+            <div className="pst-band">
+              <div className="pst-qr">
+                {qr ? <img src={qr} alt="" />
+                    : <div className="pst-qr-empty">Mets le lien du site pour générer le QR code</div>}
+              </div>
+              <div>
+                <PosterText as="h2" field="scan" {...edit}>{'Scan to see the full list\nand book a viewing'}</PosterText>
+                <PosterText as="p" field="pickup" {...edit}>
+                  {settings.address ? `Pickup at ${settings.address}` : 'Pickup only'}
+                </PosterText>
+                <PosterText as="p" field="confirm" {...edit}>I will message you to confirm the time</PosterText>
+                <div className="pst-pay">
+                  {PAYMENT_METHODS.map((m) => <span key={m.id}>{m.short}</span>)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

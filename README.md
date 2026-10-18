@@ -14,7 +14,7 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `migration-paiement.sql` | Supabase, SQL Editor | une fois, si la base existait avant le choix MobilePay / Revolut |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
-| `affiche.html` | ton ordinateur | à ouvrir dans le navigateur puis imprimer en PDF |
+| `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
 
 Seuls `index.html` et `app.jsx` sont publiés sur GitHub. Les fichiers `.sql` se
 collent dans Supabase, ils n'ont pas besoin d'être dans le dépôt (tu peux les y
@@ -67,7 +67,7 @@ Ne mets jamais la clé `service_role` dans ces fichiers, celle-là donne tous le
 4. Une minute plus tard, ton site est en ligne sur
    `https://TON-PSEUDO.github.io/meubles/`
 
-C'est cette adresse à coller dans le champ de l'affiche pour générer le QR code.
+C'est cette adresse que contient le QR code de l'affiche (onglet Affiche, rempli tout seul).
 **Fixe-la avant d'imprimer.**
 
 Dans Supabase, **Authentication → URL Configuration → Site URL**, colle cette même
@@ -78,11 +78,14 @@ adresse (`https://TON-PSEUDO.github.io/meubles/`) puis **Save**. Sans ça, le li
 
 Ouvre le site, clique sur **Seller access** en bas de page (ou va directement sur
 `https://TON-PSEUDO.github.io/meubles/#vendeur`, à mettre en favori sur ton téléphone),
-connecte-toi avec l'e-mail de l'étape 3. Trois onglets :
+connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
+- **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix, clique sur un
+  texte pour le modifier, puis **Imprimer / Enregistrer en PDF** (A4, marges « Aucune »,
+  graphiques d'arrière-plan cochés). Le choix est gardé dans ce navigateur.
 
 ---
 
