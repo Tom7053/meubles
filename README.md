@@ -81,6 +81,9 @@ Ouvre le site, clique sur **Seller access** en bas de page (ou va directement su
 connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
+  La description en anglais s'écrit toute seule avec le type, la matière, l'état,
+  les défauts… choisis dans le formulaire (pas d'IA, juste des phrases toutes
+  faites), et tu peux la retoucher. Le prix se tape sans « kr », il est ajouté tout seul.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix, clique sur un

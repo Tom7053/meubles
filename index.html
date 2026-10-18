@@ -177,6 +177,20 @@ function priceValue(raw) {
 
 const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
 
+// Un prix s'affiche toujours suivi de « kr », qu'on l'ait tapé avec ou
+// sans : « 450 », « 450kr » et « 450 DKK » donnent tous « 450 kr ».
+function withKr(raw) {
+  const p = String(raw || '').trim()
+    .replace(/^(kr\.?|dkk)\s*/i, '')
+    .replace(/\s*(kr\.?|dkk|kroner|,-)$/i, '')
+    .trim();
+  if (!p) return '';
+  return /\d/.test(p) ? `${p} kr` : p;
+}
+
+// Le prix vu par les acheteurs : sans prix, c'est gratuit.
+const showPrice = (raw) => withKr(raw) || 'Free';
+
 /* ---------------------------- fin de vente -------------------------- */
 // Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
 // les calendriers s'arrêtent là et on ne peut pas aller au mois suivant.
@@ -728,7 +742,7 @@ function ItemCard({ item, onBook, onPhoto }) {
       <div className="p-4 sm:p-5 flex flex-col flex-1">
         <div className="flex items-start justify-between gap-3">
           <h3 className="display font-bold text-xl leading-snug">{item.title}</h3>
-          <span className="display font-bold text-xl text-blue-700 whitespace-nowrap">{item.price || 'Free'}</span>
+          <span className="display font-bold text-xl text-blue-700 whitespace-nowrap">{showPrice(item.price)}</span>
         </div>
 
         {item.condition && <p className="mt-1 text-sm text-slate-500">Condition: {item.condition}</p>}
@@ -776,7 +790,7 @@ function PhotoViewer({ item, onClose, onBook }) {
       <div className="p-4" onClick={(e) => e.stopPropagation()}>
         <button onClick={onBook}
                 className="w-full max-w-md mx-auto flex items-center justify-center gap-2 font-semibold bg-white text-blue-800 rounded-xl py-3.5">
-          <Icon name="calendar" className="w-5 h-5" /> Book a viewing · {item.price || 'Free'}
+          <Icon name="calendar" className="w-5 h-5" /> Book a viewing · {showPrice(item.price)}
         </button>
       </div>
     </div>
@@ -1015,7 +1029,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
           <li className="flex items-start gap-3 px-4 py-3">
             <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
             <span>
-              <span className="block font-semibold">{item.price || 'Free'}</span>
+              <span className="block font-semibold">{showPrice(item.price)}</span>
               <span className="block text-sm text-slate-500">Pay on pickup by {paymentLabel(done.payment, 'en')}</span>
             </span>
           </li>
@@ -1056,7 +1070,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold leading-snug">{item.title}</p>
-                  <p className="text-blue-700 font-semibold">{item.price || 'Free'}</p>
+                  <p className="text-blue-700 font-semibold">{showPrice(item.price)}</p>
                 </div>
               </div>
               {step === 1 ? stepOne : stepTwo}
@@ -1376,6 +1390,152 @@ function NewPassword({ email, onDone }) {
   );
 }
 
+// Menu « État » de l'annonce : `en` est ce qui est enregistré et affiché
+// dans la boutique, `fr` ce qu'on lit dans le menu, `sentence` la phrase
+// reprise dans la description.
+const CONDITIONS = [
+  { en: 'New', fr: 'Neuf', sentence: 'Brand new, never used.' },
+  { en: 'Like new', fr: 'Comme neuf', sentence: 'Barely used, it looks like new.' },
+  { en: 'Very good', fr: 'Très bon état', sentence: 'In very good condition.' },
+  { en: 'Good', fr: 'Bon état', sentence: 'In good condition, with light signs of use.' },
+  { en: 'Fair', fr: 'État correct, traces d’usure', sentence: 'In fair condition, with visible signs of wear.' },
+];
+
+/* ------------------ description écrite toute seule ------------------ */
+// Pas d'IA : on colle des phrases toutes faites en anglais selon ce qui est
+// choisi dans le formulaire. `fr` est ce qu'on lit, `en` ce qui part dans
+// le texte. Rien de tout ça n'est enregistré, seule la description l'est.
+const KINDS = [
+  { fr: 'Bureau', en: 'desk' },
+  { fr: 'Table', en: 'table' },
+  { fr: 'Table basse', en: 'coffee table' },
+  { fr: 'Table de chevet', en: 'bedside table' },
+  { fr: 'Chaise', en: 'chair' },
+  { fr: 'Chaise de bureau', en: 'office chair' },
+  { fr: 'Fauteuil', en: 'armchair' },
+  { fr: 'Canapé', en: 'sofa' },
+  { fr: 'Lit', en: 'bed' },
+  { fr: 'Matelas', en: 'mattress' },
+  { fr: 'Armoire', en: 'wardrobe' },
+  { fr: 'Commode', en: 'chest of drawers' },
+  { fr: 'Étagère', en: 'shelf' },
+  { fr: 'Bibliothèque', en: 'bookcase' },
+  { fr: 'Meuble TV', en: 'TV stand' },
+  { fr: 'Télé', en: 'TV' },
+  { fr: 'Lampe', en: 'lamp' },
+  { fr: 'Miroir', en: 'mirror' },
+  { fr: 'Tapis', en: 'rug' },
+];
+
+// `adj` quand le mot change devant le nom (« wooden desk » mais « in wood »).
+const MATERIALS = [
+  { fr: 'Bois', en: 'wood', adj: 'wooden' },
+  { fr: 'Bois massif', en: 'solid wood' },
+  { fr: 'Chêne', en: 'oak' },
+  { fr: 'Pin', en: 'pine' },
+  { fr: 'Bouleau', en: 'birch' },
+  { fr: 'Métal', en: 'metal' },
+  { fr: 'Verre', en: 'glass' },
+  { fr: 'Plastique', en: 'plastic' },
+  { fr: 'Tissu', en: 'fabric' },
+  { fr: 'Velours', en: 'velvet' },
+  { fr: 'Cuir', en: 'leather' },
+  { fr: 'Simili-cuir', en: 'faux leather' },
+  { fr: 'Rotin', en: 'rattan' },
+];
+
+const COLOURS = [
+  { fr: 'Blanc', en: 'white' },
+  { fr: 'Noir', en: 'black' },
+  { fr: 'Gris', en: 'grey' },
+  { fr: 'Beige', en: 'beige' },
+  { fr: 'Marron', en: 'brown' },
+  { fr: 'Bleu', en: 'blue' },
+  { fr: 'Vert', en: 'green' },
+  { fr: 'Rouge', en: 'red' },
+  { fr: 'Jaune', en: 'yellow' },
+  { fr: 'Rose', en: 'pink' },
+];
+
+// Chaque atout complète « It … ».
+const FEATURES = [
+  { fr: 'Beaucoup de rangement', en: 'has plenty of storage' },
+  { fr: 'Tiroirs', en: 'has drawers' },
+  { fr: 'Facile à démonter', en: 'is easy to take apart' },
+  { fr: 'Pliable', en: 'folds away' },
+  { fr: 'Réglable en hauteur', en: 'is height-adjustable' },
+  { fr: 'Sur roulettes', en: 'is on wheels' },
+  { fr: 'Léger', en: 'is light and easy to move' },
+  { fr: 'Très confortable', en: 'is very comfortable' },
+  { fr: 'Housse lavable', en: 'has a washable cover' },
+  { fr: 'Marche parfaitement', en: 'works perfectly' },
+];
+
+// Chaque défaut complète « Please note: … ».
+const FLAWS = [
+  { fr: 'Petites rayures', en: 'a few small scratches' },
+  { fr: 'Petite tache', en: 'a small stain' },
+  { fr: 'Petit choc', en: 'a small dent' },
+  { fr: 'Décoloré par le soleil', en: 'some sun fading' },
+  { fr: 'Un peu bancal', en: 'a slight wobble' },
+  { fr: 'Vis manquante', en: 'a missing screw' },
+];
+
+// Chaque mot complète « From a … home ».
+const HOME = [
+  { fr: 'Non-fumeur', en: 'smoke-free' },
+  { fr: 'Sans animaux', en: 'pet-free' },
+];
+
+const emptyDetails = {
+  kind: '', material: '', colour: '', brand: '', width: '', depth: '', height: '', tags: [],
+};
+
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+// « a », « a and b », « a, b and c »
+const joinAnd = (list) =>
+  list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+
+// Ex. : « White oak desk from IKEA. It measures 120 cm wide and 60 cm deep.
+// It has drawers. In very good condition. Please note: a small stain. »
+function describeItem(item, d) {
+  const kind = KINDS.find((k) => k.en === d.kind);
+  const material = MATERIALS.find((m) => m.en === d.material);
+  const brand = d.brand.trim();
+  const from = brand ? ` from ${brand}` : '';
+  const picked = (list) => list.filter((o) => d.tags.includes(o.en)).map((o) => o.en);
+  const sentences = [];
+
+  if (kind) {
+    const words = [d.colour, material && (material.adj || material.en), kind.en];
+    sentences.push(`${cap(words.filter(Boolean).join(' '))}${from}.`);
+  } else if ((item.title || '').trim() && (d.colour || material || brand)) {
+    // Pas de type choisi : on part du titre de l'annonce.
+    const look = [d.colour, material && material.en].filter(Boolean).join(' ');
+    sentences.push(`${item.title.trim()}${look ? ` in ${look}` : ''}${from}.`);
+  }
+
+  const size = [['wide', d.width], ['deep', d.depth], ['high', d.height]]
+    .map(([word, v]) => [word, String(v).replace(/[^\d.,]/g, '')])
+    .filter(([, v]) => v)
+    .map(([word, v]) => `${v} cm ${word}`);
+  if (size.length) sentences.push(`It measures ${joinAnd(size)}.`);
+
+  const features = picked(FEATURES);
+  if (features.length) sentences.push(`It ${joinAnd(features)}.`);
+
+  const condition = CONDITIONS.find((c) => c.en === item.condition);
+  if (condition) sentences.push(condition.sentence);
+
+  const flaws = picked(FLAWS);
+  if (flaws.length) sentences.push(`Please note: ${joinAnd(flaws)}.`);
+
+  const home = picked(HOME);
+  if (home.length) sentences.push(`From a ${home.join(', ')} home.`);
+
+  return sentences.join(' ');
+}
+
 const emptyForm = {
   id: null, title: '', price: '', condition: '', description: '',
   links: [], image: null, status: 'available',
@@ -1434,15 +1594,44 @@ function ItemsPanel({ items, setItems, pushToast }) {
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Choix qui servent à écrire la description (type, couleur, défauts…).
+  const [details, setDetails] = useState(emptyDetails);
+  // Texte remplacé par « Réécrire », pour pouvoir revenir en arrière.
+  const [beforeRewrite, setBeforeRewrite] = useState(null);
   const fileRef = useRef(null);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // Le champ prix se tape sans « kr », il est rajouté à l'enregistrement.
+  const openForm = (f) => {
+    setForm({ ...f, price: withKr(f.price).replace(/ kr$/, '') });
+    setDetails(emptyDetails);
+    setBeforeRewrite(null);
+    setOpen(true);
+  };
+
+  // Tant que la description n'a pas été retouchée à la main, elle suit les
+  // choix du formulaire. Une fois retouchée, on n'y touche plus.
+  const change = (nextForm, nextDetails) => {
+    const follows = !(form.description || '').trim() || form.description === describeItem(form, details);
+    setForm(follows ? { ...nextForm, description: describeItem(nextForm, nextDetails) } : nextForm);
+    setDetails(nextDetails);
+  };
+  const setDetail = (k, v) => change(form, { ...details, [k]: v });
+  const toggleTag = (en) => setDetail('tags',
+    details.tags.includes(en) ? details.tags.filter((t) => t !== en) : [...details.tags, en]);
+
+  const rewrite = () => {
+    const text = describeItem(form, details);
+    if (!text) return pushToast('Choisis d’abord le type de meuble, l’état ou une couleur.');
+    if (form.description.trim() && form.description !== text) setBeforeRewrite(form.description);
+    set('description', text);
+  };
 
   const submit = async () => {
     if (!form.title.trim()) return pushToast('Il manque le titre de l’annonce.');
     setBusy(true);
     const payload = {
       title: form.title.trim(),
-      price: form.price.trim(),
+      price: withKr(form.price),
       condition: form.condition.trim(),
       description: form.description.trim(),
       links: (form.links || []).filter((l) => l.label.trim() && l.url.trim()),
@@ -1494,7 +1683,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
 
       <div className="flex items-center justify-between mb-5">
         <p className="text-slate-500 text-sm">{items.length} meuble{items.length > 1 ? 's' : ''} enregistré{items.length > 1 ? 's' : ''}</p>
-        <button onClick={() => { setForm(emptyForm); setOpen(true); }}
+        <button onClick={() => openForm(emptyForm)}
                 className="inline-flex items-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-4 py-2.5 text-sm">
           <Icon name="plus" className="w-4 h-4" /> Ajouter un meuble
         </button>
@@ -1507,27 +1696,30 @@ function ItemsPanel({ items, setItems, pushToast }) {
           <div className="grid sm:grid-cols-3 gap-3">
             <label className="block sm:col-span-2">
               <span className="text-sm text-slate-600">Titre</span>
-              <input value={form.title} onChange={(e) => set('title', e.target.value)}
+              <input value={form.title} onChange={(e) => change({ ...form, title: e.target.value }, details)}
                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Bureau en chêne" />
             </label>
             <label className="block">
               <span className="text-sm text-slate-600">Prix</span>
-              <input value={form.price} onChange={(e) => set('price', e.target.value)}
-                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="450 kr" />
+              <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+                <input value={form.price} onChange={(e) => set('price', e.target.value)} inputMode="decimal"
+                       className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="450" />
+                <span className="pr-3 text-slate-500">kr</span>
+              </span>
             </label>
           </div>
 
           <label className="block mt-3">
-            <span className="text-sm text-slate-600">État (affiché en anglais)</span>
-            <input value={form.condition} onChange={(e) => set('condition', e.target.value)}
-                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Very good" />
-          </label>
-
-          <label className="block mt-3">
-            <span className="text-sm text-slate-600">Description (affichée en anglais)</span>
-            <textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={3}
-                      className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
-                      placeholder="Solid oak desk, 120 × 60 cm. Two drawers, one small scratch on the left side." />
+            <span className="text-sm text-slate-600">État</span>
+            <select value={form.condition || ''} onChange={(e) => change({ ...form, condition: e.target.value }, details)}
+                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white">
+              <option value="">Non précisé</option>
+              {CONDITIONS.map((c) => <option key={c.en} value={c.en}>{c.fr} · « {c.en} »</option>)}
+              {/* état tapé à la main avant le menu : on le garde tel quel */}
+              {form.condition && !CONDITIONS.some((c) => c.en === form.condition) && (
+                <option value={form.condition}>{form.condition}</option>
+              )}
+            </select>
           </label>
 
           <div className="mt-4">
@@ -1545,6 +1737,81 @@ function ItemsPanel({ items, setItems, pushToast }) {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="mt-5 border-t border-blue-200 pt-4">
+            <span className="font-semibold text-sm">Pour écrire la description</span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Coche ce qui correspond, la description en anglais s’écrit toute seule en dessous.
+            </p>
+
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[['kind', 'Type', KINDS, 'Autre (le titre)'], ['material', 'Matière', MATERIALS, '—'],
+                ['colour', 'Couleur', COLOURS, '—']].map(([k, label, options, none]) => (
+                <label key={k} className={`block ${k === 'kind' ? 'col-span-2 sm:col-span-1' : ''}`}>
+                  <span className="text-sm text-slate-600">{label}</span>
+                  <select value={details[k]} onChange={(e) => setDetail(k, e.target.value)}
+                          className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white">
+                    <option value="">{none}</option>
+                    {options.map((o) => <option key={o.en} value={o.en}>{o.fr}</option>)}
+                  </select>
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-3">
+              <label className="block col-span-3 sm:col-span-1">
+                <span className="text-sm text-slate-600">Marque</span>
+                <input value={details.brand} onChange={(e) => setDetail('brand', e.target.value)}
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="IKEA" />
+              </label>
+              {[['width', 'Largeur'], ['depth', 'Profondeur'], ['height', 'Hauteur']].map(([k, label]) => (
+                <label key={k} className="block">
+                  <span className="text-sm text-slate-600">{label}</span>
+                  <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+                    <input value={details[k]} onChange={(e) => setDetail(k, e.target.value)} inputMode="decimal"
+                           className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" />
+                    <span className="pr-3 text-slate-500 text-sm">cm</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {[['Atouts', FEATURES], ['Défauts à signaler', FLAWS], ['Chez toi', HOME]].map(([label, options]) => (
+              <div key={label} className="mt-3">
+                <span className="text-sm text-slate-600">{label}</span>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {options.map((o) => (
+                    <button key={o.en} type="button" onClick={() => toggleTag(o.en)} aria-pressed={details.tags.includes(o.en)}
+                            className={`rounded-lg text-sm border px-3 py-1.5 ${
+                              details.tags.includes(o.en) ? 'bg-blue-700 border-blue-700 text-white'
+                                                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                      {o.fr}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="mt-4 flex items-end justify-between gap-3">
+              <label htmlFor="item-description" className="text-sm text-slate-600">Description (affichée en anglais)</label>
+              <button type="button" onClick={rewrite}
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900 whitespace-nowrap">
+                <Icon name="refresh" className="w-4 h-4" /> Réécrire
+              </button>
+            </div>
+            <textarea id="item-description" value={form.description} onChange={(e) => set('description', e.target.value)}
+                      rows={4} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                      placeholder="White oak desk from IKEA. It measures 120 cm wide and 60 cm deep. In very good condition." />
+            <p className="mt-1 text-xs text-slate-500">
+              Tu peux retoucher le texte : il ne bougera plus tout seul. « Réécrire » repart de tes choix.
+              {beforeRewrite != null && (
+                <button type="button" onClick={() => { set('description', beforeRewrite); setBeforeRewrite(null); }}
+                        className="ml-2 underline hover:text-blue-700">
+                  Revenir au texte d’avant
+                </button>
+              )}
+            </p>
           </div>
 
           <div className="mt-5 border-t border-blue-200 pt-4">
@@ -1658,7 +1925,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
-                  <span className="text-blue-700 text-sm">{item.price}</span>
+                  <span className="text-blue-700 text-sm">{withKr(item.price)}</span>
                   {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">Vendu</span>}
                 </div>
                 <p className="text-xs text-slate-500 mt-1 truncate">
@@ -1678,7 +1945,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
                         className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
                   {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
                 </button>
-                <button onClick={() => { setForm({ ...emptyForm, ...item, links: item.links || [] }); setOpen(true); }}
+                <button onClick={() => openForm({ ...emptyForm, ...item, links: item.links || [] })}
                         className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
                   <Icon name="pencil" className="w-4 h-4" />
                 </button>
@@ -2153,7 +2420,7 @@ function PosterPanel({ items, settings }) {
                                     : <Icon name="image" className="w-4 h-4 text-blue-200" />}
                       </span>
                       <span className="flex-1 min-w-0 text-sm font-medium truncate">{item.title}</span>
-                      <span className="text-sm text-blue-700 whitespace-nowrap">{item.price || 'Free'}</span>
+                      <span className="text-sm text-blue-700 whitespace-nowrap">{showPrice(item.price)}</span>
                     </label>
                   </li>
                 ))}
@@ -2213,7 +2480,7 @@ function PosterPanel({ items, settings }) {
                     <li key={item.id}>
                       <span className="pst-name">{item.title}</span>
                       <span className="pst-dots" />
-                      <span className="pst-price">{item.price || 'Free'}</span>
+                      <span className="pst-price">{showPrice(item.price)}</span>
                     </li>
                   ))}
                 </ul>
