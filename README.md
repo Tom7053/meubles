@@ -106,8 +106,11 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix, clique sur un
   texte pour le modifier, choisis les paiements affichés en bas (Revolut et Cash au
-  départ, on en retire ou on en ajoute), puis **Imprimer / Enregistrer en PDF** (A4,
-  marges « Aucune », graphiques d'arrière-plan cochés). Le choix est gardé dans ce navigateur.
+  départ, on en retire ou on en ajoute), choisis le **format** : **1 par feuille**
+  (une affiche A4) ou **2 par feuille** (deux affiches A5 identiques sur un A4 en
+  paysage, à couper le long des pointillés), puis **Imprimer / Enregistrer en PDF**
+  (A4, en paysage pour 2 par feuille, marges « Aucune », graphiques d'arrière-plan
+  cochés). Les choix sont gardés dans ce navigateur.
 
 ---
 

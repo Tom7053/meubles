@@ -50,6 +50,13 @@
 
   /* ---------- affiche A4 (onglet Affiche de l'espace vendeur) ---------- */
   .pst-frame { background: #fff; overflow: hidden; box-shadow: 0 10px 40px rgba(22,48,122,.16); }
+  /* La feuille imprimée : une affiche A4, ou deux affiches A5 côte à côte
+     sur un A4 en paysage (l'affiche réduite à 1/√2 fait pile un A5). */
+  .pst-page { position: relative; width: 210mm; height: 297mm; background: #fff; transform-origin: top left; }
+  .pst-page.is-two { width: 297mm; height: 210mm; display: flex; }
+  .pst-half { flex: none; width: 148.5mm; height: 210mm; overflow: hidden; }
+  .pst-half .pst-sheet { transform: scale(.70711); }
+  .pst-cut { position: absolute; top: 0; bottom: 0; left: 148.5mm; border-left: .3mm dashed #9fb3d9; }
   .pst-sheet {
     width: 210mm; height: 297mm; background: #fff; color: #101a2e;
     display: flex; flex-direction: column; overflow: hidden; transform-origin: top left;
@@ -96,14 +103,15 @@
     .pst-band .pst-edit:hover, .pst-band .pst-edit:focus { background: rgba(255,255,255,.12); }
   }
 
-  /* À l'impression, seule l'affiche sort, en A4 sans marges. Le reste de
-     l'espace vendeur porte la classe Tailwind print:hidden. */
+  /* À l'impression, seule l'affiche sort, en A4 sans marges (en paysage
+     pour 2 par feuille, voir PosterPanel). Le reste de l'espace vendeur
+     porte la classe Tailwind print:hidden. */
   @page { size: A4; margin: 0; }
   @media print {
     html, body { background: #fff !important; }
     .min-h-screen { min-height: 0 !important; }
     .pst-frame { width: auto !important; height: auto !important; box-shadow: none !important; }
-    .pst-sheet { transform: none !important; }
+    .pst-page { transform: none !important; }
   }
 </style>
 </head>
@@ -2773,12 +2781,14 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
 /* ------------------------------ affiche ----------------------------- */
 // L'affiche A4 à imprimer, générée à partir des annonces : on coche les
 // meubles qui y figurent avec leur prix, les autres sont cités en une ligne.
-// Le choix, les textes retouchés et les paiements affichés restent
-// enregistrés dans ce navigateur.
+// Elle s'imprime seule sur un A4, ou en deux exemplaires A5 sur la même
+// feuille. Le choix, les textes retouchés, les paiements affichés et le
+// format restent enregistrés dans ce navigateur.
 
 const POSTER_PICKS_KEY = 'meubles-affiche-choix';
 const POSTER_TEXTS_KEY = 'meubles-affiche-textes';
 const POSTER_PAY_KEY = 'meubles-affiche-paiements';
+const POSTER_TWO_UP_KEY = 'meubles-affiche-deux-par-feuille';
 // Paiements en bas de l'affiche, en anglais comme le reste de l'affiche.
 const POSTER_PAY_DEFAULT = ['Revolut', 'Cash'];
 const POSTER_PAY_PRESETS = ['Revolut', 'Cash', 'MobilePay'];
@@ -2886,8 +2896,9 @@ function PosterPanel({ items, settings }) {
   const [picks, setPicks] = useState(() => readStored(POSTER_PICKS_KEY, null));
   const [texts, setTexts] = useState(() => readStored(POSTER_TEXTS_KEY, {}));
   const [pays, setPays] = useState(() => readStored(POSTER_PAY_KEY, POSTER_PAY_DEFAULT));
+  const [twoUp, setTwoUp] = useState(() => readStored(POSTER_TWO_UP_KEY, false) === true);
   const [link, setLink] = useState(SITE_URL);
-  const [scale, setScale] = useState(0.5);
+  const [frameWidth, setFrameWidth] = useState(A4_PX.w / 2);
   const [overflow, setOverflow] = useState(false);
   const frameRef = useRef(null);
   const topRef = useRef(null);
@@ -2915,12 +2926,16 @@ function PosterPanel({ items, settings }) {
   const resetTexts = () => { setTexts({}); writeStored(POSTER_TEXTS_KEY, {}); };
   const edit = { texts, onSave: saveText };
   const savePays = (list) => { setPays(list); writeStored(POSTER_PAY_KEY, list); };
+  const saveTwoUp = (on) => { setTwoUp(on); writeStored(POSTER_TWO_UP_KEY, on); };
 
-  // L'aperçu est une vraie page A4, réduite pour tenir dans l'écran.
+  // L'aperçu est la vraie feuille A4 (en paysage pour 2 par feuille),
+  // réduite pour tenir dans l'écran.
+  const page = twoUp ? { w: A4_PX.h, h: A4_PX.w } : A4_PX;
+  const scale = Math.min(1, frameWidth / page.w);
   useEffect(() => {
     const el = frameRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setScale(Math.min(1, el.clientWidth / A4_PX.w)));
+    const ro = new ResizeObserver(() => setFrameWidth(el.clientWidth));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -2933,6 +2948,60 @@ function PosterPanel({ items, settings }) {
     check();
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
   });
+
+  // Une affiche. En 2 par feuille elle est dessinée deux fois, identiques
+  // (un texte retouché sur l'une change aussi l'autre) ; seule la première
+  // sert à détecter le débordement.
+  const sheet = (main) => (
+    <div className="pst-sheet">
+      <div className="pst-top" ref={main ? topRef : null}>
+        <p className="pst-eyebrow">
+          <PosterText as="span" field="eyebrow" {...edit}>My internship ends on 20 November</PosterText>
+        </p>
+        <PosterText as="h1" field="title" className="pst-title" {...edit}>{'Everything\nmust go'}</PosterText>
+        <PosterText as="p" field="lede" className="pst-lede" {...edit}>
+          I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.
+        </PosterText>
+
+        {onPoster.length > 0 && (
+          <ul className={`pst-list ${density}`}>
+            {onPoster.map((item) => (
+              <li key={item.id}>
+                <span className="pst-name">
+                  {item.title}{leftQty(item) > 1 && <span className="pst-qty"> ×{leftQty(item)}</span>}
+                </span>
+                <span className="pst-dots" />
+                <span className="pst-price">
+                  {showPrice(item.price)}
+                  {leftQty(item) > 1 && priceValue(item.price) > 0 && <span className="pst-qty"> each</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {moreText && <p className="pst-more">{moreText}</p>}
+      </div>
+
+      <div className="pst-band">
+        <div className="pst-qr">
+          {qr ? <img src={qr} alt="" />
+              : <div className="pst-qr-empty">Mets le lien du site pour générer le QR code</div>}
+        </div>
+        <div>
+          <PosterText as="h2" field="scan" {...edit}>{'Scan to see the full list\nand book a viewing'}</PosterText>
+          <PosterText as="p" field="pickup" {...edit}>
+            {settings.address ? `Pickup at ${settings.address}` : 'Pickup only'}
+          </PosterText>
+          <PosterText as="p" field="confirm" {...edit}>I will message you to confirm the time</PosterText>
+          {pays.length > 0 && (
+            <div className="pst-pay">
+              {pays.map((p) => <span key={p}>{p}</span>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="grid lg:grid-cols-[20rem_1fr] gap-8 items-start print:block">
@@ -2989,6 +3058,31 @@ function PosterPanel({ items, settings }) {
                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
         </label>
 
+        <section>
+          <h2 className="display font-bold text-lg">Format</h2>
+          <div className="mt-3 grid grid-cols-2 gap-2" role="radiogroup">
+            {[[false, '1 par feuille', 'Une affiche A4'], [true, '2 par feuille', 'Deux A5 à découper']].map(([on, label, sub]) => (
+              <button key={label} role="radio" aria-checked={twoUp === on} onClick={() => saveTwoUp(on)}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left ${
+                        twoUp === on ? 'border-blue-700 bg-blue-50 ring-1 ring-blue-700'
+                                     : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                {/* petit dessin de la feuille */}
+                {on ? (
+                  <span className="w-8 h-6 shrink-0 rounded-sm border-2 border-blue-700 flex">
+                    <span className="w-1/2 border-r-2 border-dashed border-blue-700" />
+                  </span>
+                ) : (
+                  <span className="w-5 h-7 mx-1.5 shrink-0 rounded-sm border-2 border-blue-700" />
+                )}
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold">{label}</span>
+                  <span className="block text-xs text-slate-500">{sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+
         {overflow && (
           <div className="flex gap-2 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5 text-sm text-amber-900">
             <Icon name="alert" className="w-4 h-4 mt-0.5 shrink-0" />
@@ -3002,8 +3096,10 @@ function PosterPanel({ items, settings }) {
             Imprimer / Enregistrer en PDF
           </button>
           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Clique sur un texte de l’affiche pour le modifier. À l’impression : format A4,
+            Clique sur un texte de l’affiche pour le modifier. À l’impression : format A4
+            {twoUp && <strong className="font-semibold text-slate-700"> en paysage</strong>},
             marges « Aucune », « Graphiques d’arrière-plan » coché.
+            {twoUp && ' Coupe ensuite la feuille en deux le long des pointillés.'}
           </p>
           {Object.keys(texts).length > 0 && (
             <button onClick={resetTexts} className="mt-2 text-xs text-slate-500 hover:text-blue-700 underline">
@@ -3014,54 +3110,17 @@ function PosterPanel({ items, settings }) {
       </div>
 
       <div ref={frameRef} className="min-w-0">
-        <div className="pst-frame mx-auto" style={{ width: A4_PX.w * scale, height: A4_PX.h * scale }}>
-          <div className="pst-sheet" style={{ transform: `scale(${scale})` }}>
-            <div className="pst-top" ref={topRef}>
-              <p className="pst-eyebrow">
-                <PosterText as="span" field="eyebrow" {...edit}>My internship ends on 20 November</PosterText>
-              </p>
-              <PosterText as="h1" field="title" className="pst-title" {...edit}>{'Everything\nmust go'}</PosterText>
-              <PosterText as="p" field="lede" className="pst-lede" {...edit}>
-                I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.
-              </PosterText>
-
-              {onPoster.length > 0 && (
-                <ul className={`pst-list ${density}`}>
-                  {onPoster.map((item) => (
-                    <li key={item.id}>
-                      <span className="pst-name">
-                        {item.title}{leftQty(item) > 1 && <span className="pst-qty"> ×{leftQty(item)}</span>}
-                      </span>
-                      <span className="pst-dots" />
-                      <span className="pst-price">
-                        {showPrice(item.price)}
-                        {leftQty(item) > 1 && priceValue(item.price) > 0 && <span className="pst-qty"> each</span>}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {moreText && <p className="pst-more">{moreText}</p>}
-            </div>
-
-            <div className="pst-band">
-              <div className="pst-qr">
-                {qr ? <img src={qr} alt="" />
-                    : <div className="pst-qr-empty">Mets le lien du site pour générer le QR code</div>}
-              </div>
-              <div>
-                <PosterText as="h2" field="scan" {...edit}>{'Scan to see the full list\nand book a viewing'}</PosterText>
-                <PosterText as="p" field="pickup" {...edit}>
-                  {settings.address ? `Pickup at ${settings.address}` : 'Pickup only'}
-                </PosterText>
-                <PosterText as="p" field="confirm" {...edit}>I will message you to confirm the time</PosterText>
-                {pays.length > 0 && (
-                  <div className="pst-pay">
-                    {pays.map((p) => <span key={p}>{p}</span>)}
-                  </div>
-                )}
-              </div>
-            </div>
+        {/* Feuille en paysage : le navigateur la propose tout seul à l'impression. */}
+        {twoUp && <style>{'@page { size: A4 landscape; margin: 0; }'}</style>}
+        <div className="pst-frame mx-auto" style={{ width: page.w * scale, height: page.h * scale }}>
+          <div className={`pst-page ${twoUp ? 'is-two' : ''}`} style={{ transform: `scale(${scale})` }}>
+            {twoUp ? (
+              <>
+                <div className="pst-half">{sheet(true)}</div>
+                <div className="pst-half">{sheet(false)}</div>
+                <span className="pst-cut" />
+              </>
+            ) : sheet(true)}
           </div>
         </div>
       </div>
