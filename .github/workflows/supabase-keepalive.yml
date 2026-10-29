@@ -1,0 +1,41 @@
+name: Supabase keep-alive
+
+# Supabase met en pause les projets gratuits restés une semaine sans
+# activité. Une petite lecture par jour suffit à le garder éveillé. Si le
+# projet est quand même en pause, ce workflow échoue et GitHub prévient
+# par e-mail.
+on:
+  schedule:
+    - cron: '17 6 * * *'   # tous les jours vers 7 h 17 (heure du Danemark en hiver)
+  workflow_dispatch:       # bouton « Run workflow » pour tester à la main
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lire une ligne de la table items
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          # Sans secrets, on prend l'URL et la clé anon d'index.html : elles
+          # y sont déjà, publiques par conception.
+          if [ -z "$SUPABASE_URL" ]; then
+            SUPABASE_URL=$(sed -n "s/.*SUPABASE_URL: *'\([^']*\)'.*/\1/p" index.html | head -n 1)
+          fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            SUPABASE_ANON_KEY=$(sed -n "s/.*SUPABASE_ANON_KEY: *'\([^']*\)'.*/\1/p" index.html | head -n 1)
+          fi
+          # Même tolérance que le site : URL copiée avec /rest/v1 ou un / au bout.
+          SUPABASE_URL=${SUPABASE_URL%/}
+          SUPABASE_URL=${SUPABASE_URL%/rest/v1}
+
+          curl --fail-with-body --silent --show-error --retry 3 --retry-delay 20 \
+            "$SUPABASE_URL/rest/v1/items?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+          echo
+          echo "Supabase a répondu, le projet reste actif."

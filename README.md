@@ -7,19 +7,22 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 
 | Fichier | Où il va | Quand |
 |---|---|---|
-| `index.html` | dépôt GitHub | toujours — c'est la page, contient tes clés |
-| `app.jsx` | dépôt GitHub | toujours — toute l'application |
+| `index.html` | dépôt GitHub | toujours — c'est la page et toute l'application, contient tes clés |
+| `.github/workflows/supabase-keepalive.yml` | dépôt GitHub | pour que Supabase ne mette pas le projet en pause (voir « Projet en pause ») |
 | `schema.sql` | Supabase, SQL Editor | une fois, au début |
 | `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée |
 | `migration-paiement.sql` | Supabase, SQL Editor | si la base existait avant le choix du paiement, **ou pour accepter Cash** (sans risque à relancer) |
 | `migration-quantite.sql` | Supabase, SQL Editor | une fois, **pour vendre plusieurs exemplaires d'un meuble** (2 lits…) (sans risque à relancer) |
+| `migration-photos.sql` | Supabase, SQL Editor | une fois, **pour mettre plusieurs photos par meuble** et retrouver les choix de la description en rouvrant une annonce (sans risque à relancer) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
+| `app.jsx` | — | **plus utilisé** : ancienne version, `index.html` contient toute l'application |
 
-Seuls `index.html` et `app.jsx` sont publiés sur GitHub. Les fichiers `.sql` se
-collent dans Supabase, ils n'ont pas besoin d'être dans le dépôt (tu peux les y
-laisser, ils ne contiennent aucun secret).
+Sur GitHub, le site n'a besoin que d'`index.html` ; le dossier `.github` sert au
+réveil automatique de Supabase. Les fichiers `.sql` se collent dans Supabase, ils
+n'ont pas besoin d'être dans le dépôt (tu peux les y laisser, ils ne contiennent
+aucun secret).
 
 ---
 
@@ -63,7 +66,7 @@ Ne mets jamais la clé `service_role` dans ces fichiers, celle-là donne tous le
 ## 5. Publier sur GitHub
 
 1. Crée un dépôt **public** (par exemple `meubles`).
-2. Envoie `index.html`, `app.jsx` et `README.md` (glisser-déposer sur github.com suffit).
+2. Envoie `index.html`, `README.md` et le dossier `.github` (glisser-déposer sur github.com suffit).
 3. **Settings → Pages → Source: Deploy from a branch**, branche `main`, dossier `/ (root)`.
 4. Une minute plus tard, ton site est en ligne sur
    `https://TON-PSEUDO.github.io/meubles/`
@@ -82,9 +85,19 @@ Ouvre le site, clique sur **Seller access** en bas de page (ou va directement su
 connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
-  La description en anglais s'écrit toute seule avec le type, la matière, l'état,
-  les défauts… choisis dans le formulaire (pas d'IA, juste des phrases toutes
-  faites), et tu peux la retoucher. Le prix se tape sans « kr », il est ajouté tout seul.
+  **Photos** : jusqu'à 8 par meuble, on peut en choisir plusieurs d'un coup. La
+  première sert de couverture (liste, affiche, réservation) ; « Mettre en 1re »
+  en change. Les acheteurs touchent la photo pour toutes les voir en glissant du
+  doigt. Il faut avoir lancé `migration-photos.sql` une fois, sinon seule la
+  couverture est gardée.
+  **Description** : elle s'écrit toute seule en anglais avec le type, la matière,
+  l'état, l'année d'achat, le prix payé neuf (l'économie est calculée), les atouts,
+  les défauts, le transport… (pas d'IA, juste des phrases toutes faites). Chaque
+  type de meuble a ses propres phrases et chaque annonce reçoit des tournures
+  différentes ; **Reformuler** en propose d'autres à chaque clic. Tu peux la
+  retoucher. Le titre (en anglais) se remplit aussi tout seul tant que tu ne l'as
+  pas tapé. Les choix sont gardés avec l'annonce (après `migration-photos.sql`).
+  Le prix se tape sans « kr », il est ajouté tout seul.
   **Nombre** : pour 2 lits identiques, mets 2 et le prix d'un seul. Les acheteurs
   choisissent combien ils en prennent en réservant. Quand un exemplaire part, clique
   sur **+** de « 0 vendu sur 2 » ; quand tout est vendu, l'annonce quitte la boutique.
@@ -119,6 +132,23 @@ sans activité : le site n'affiche plus rien et la connexion dit « Supabase est
 injoignable ». Va sur supabase.com, ouvre le projet et clique sur **Restore project**,
 puis attends quelques minutes.
 
+Pour que ça n'arrive pas, `.github/workflows/supabase-keepalive.yml` (gratuit, via
+GitHub Actions) envoie chaque jour une petite lecture de la table `items` : Supabase
+considère alors le projet comme actif.
+
+1. Le fichier doit être dans le dépôt GitHub, dossier `.github/workflows/`.
+2. Rien d'autre à régler : il lit l'URL et la clé anon dans `index.html`. Si tu
+   préfères, ajoute deux secrets dans le dépôt (**Settings → Secrets and variables
+   → Actions**), `SUPABASE_URL` et `SUPABASE_ANON_KEY`, pris dans Supabase sous
+   **Project Settings → Data API** : ils passent alors avant `index.html`.
+3. Onglet **Actions** du dépôt → **Supabase keep-alive** → **Run workflow** pour
+   tester. Si la case passe au vert, c'est bon.
+
+Si le projet se remet un jour en pause, le workflow échoue et GitHub t'envoie un
+e-mail. Limite à connaître : sur un dépôt public, GitHub coupe les tâches planifiées
+après 60 jours sans activité dans le dépôt (aucun commit). Il prévient par e-mail
+avant, et il suffit de réactiver le workflow dans l'onglet Actions.
+
 ## Notes
 
 **Notifications.** Tant que l'onglet vendeur est ouvert, une alerte s'affiche à la
@@ -128,7 +158,10 @@ téléphone via ntfy (gratuit, sans compte) ou un e-mail via Resend. Tout se pas
 base de données, il n'y a rien à changer dans le site.
 
 **Photos.** Elles sont redimensionnées dans le navigateur puis stockées en base64
-dans la table. Compte environ 100 Ko par meuble, très loin des 500 Mo gratuits.
+dans la base. Compte environ 100 Ko par photo, très loin des 500 Mo gratuits. Seules
+les couvertures se chargent avec la liste ; les autres photos d'un meuble ne se
+chargent que quand quelqu'un ouvre sa galerie, la boutique reste donc rapide
+sur téléphone.
 
 **Tester en local.** Ouvrir `index.html` directement ne marche pas (le navigateur
 refuse de charger `app.jsx` depuis un fichier). Lance plutôt dans le dossier :

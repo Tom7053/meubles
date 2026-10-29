@@ -287,6 +287,21 @@ function resizeImage(file, max = 900, quality = 0.72) {
   });
 }
 
+// Photos en plus de la couverture (table item_photos, migration-photos.sql).
+// Elles ne viennent pas avec la liste, trop lourdes pour un téléphone : on
+// les charge à l'ouverture de la galerie, une fois par meuble.
+const MAX_PHOTOS = 8;
+const extraPhotoCache = new Map();
+
+async function fetchExtraPhotos(itemId, fresh) {
+  if (!fresh && extraPhotoCache.has(itemId)) return extraPhotoCache.get(itemId);
+  const { data, error } = await sb.from('item_photos').select('photos').eq('item_id', itemId).maybeSingle();
+  if (error) throw error;
+  const photos = data && Array.isArray(data.photos) ? data.photos : [];
+  extraPhotoCache.set(itemId, photos);
+  return photos;
+}
+
 /* ------------------------------ icônes ----------------------------- */
 const PATHS = {
   calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
@@ -427,6 +442,10 @@ function App() {
   const [bookings, setBookings] = useState([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Nombre de photos en plus de la couverture, par meuble.
+  const [photoCounts, setPhotoCounts] = useState({});
+  // false tant que migration-photos.sql n'a pas été lancé.
+  const [manyPhotos, setManyPhotos] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const pushToast = useCallback((text, tone) => {
@@ -480,14 +499,19 @@ function App() {
   /* ---- données publiques ---- */
   const loadPublic = useCallback(async () => {
     if (!sb) return setReady(true);
-    const [it, st, bs] = await Promise.all([
+    const [it, st, bs, ph] = await Promise.all([
       sb.from('items').select('*').order('created_at', { ascending: false }),
       sb.from('settings').select('*').eq('id', 1).maybeSingle(),
       sb.from('busy_slots').select('day, slot'),
+      // Seulement les nombres, pas les photos.
+      sb.from('item_photos').select('item_id, photo_count'),
     ]);
     if (it.data) setItems(it.data);
     if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
     if (bs.data) setBusy(bs.data);
+    setManyPhotos(!ph.error);
+    if (ph.data) setPhotoCounts(Object.fromEntries(ph.data.map((r) => [r.item_id, r.photo_count])));
+    extraPhotoCache.clear();
     setLoadFailed(!!it.error);
     setReady(true);
   }, []);
@@ -536,6 +560,7 @@ function App() {
       {route === 'shop' ? (
         <Shop
           items={items}
+          photoCounts={photoCounts}
           settings={settings}
           busy={busy}
           ready={ready}
@@ -556,6 +581,9 @@ function App() {
           }}
           items={items}
           setItems={setItems}
+          manyPhotos={manyPhotos}
+          photoCounts={photoCounts}
+          setPhotoCounts={setPhotoCounts}
           bookings={bookings}
           setBookings={setBookings}
           settings={settings}
@@ -606,10 +634,11 @@ function useOverlay(onClose) {
   }, []);
 }
 
-function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBooked }) {
+function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, onAdmin, onBooked }) {
   const [booking, setBooking] = useState(null);
   const [photo, setPhoto] = useState(null);
   const available = items.filter((i) => i.status !== 'sold');
+  const photoTotal = (item) => (item.image ? 1 + (photoCounts[item.id] || 0) : 0);
 
   const steps = [
     ['Pick an item', 'Tap “Book a viewing” under the one you want.'],
@@ -693,7 +722,7 @@ function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBo
         ) : (
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {available.map((item) => (
-              <ItemCard key={item.id} item={item}
+              <ItemCard key={item.id} item={item} photoTotal={photoTotal(item)}
                         onBook={() => setBooking(item)}
                         onPhoto={() => setPhoto(item)} />
             ))}
@@ -725,6 +754,7 @@ function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBo
       {photo && (
         <PhotoViewer
           item={photo}
+          total={photoTotal(photo)}
           onClose={() => setPhoto(null)}
           onBook={() => { setPhoto(null); setBooking(photo); }}
         />
@@ -733,16 +763,34 @@ function Shop({ items, settings, busy, ready, loadFailed, onRetry, onAdmin, onBo
   );
 }
 
-function ItemCard({ item, onBook, onPhoto }) {
+function ItemCard({ item, photoTotal, onBook, onPhoto }) {
   const links = Array.isArray(item.links) ? item.links : [];
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
   const several = totalQty(item) > 1;
+  // Les longues descriptions sont coupées à 5 lignes, « Read more » les déplie.
+  const [expanded, setExpanded] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const descRef = useRef(null);
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el || expanded) return;
+    const check = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
+  }, [item.description, expanded]);
+
   return (
     <li className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
       <div className="relative aspect-[4/3] bg-blue-50">
         {item.image ? (
-          <button onClick={onPhoto} className="block w-full h-full" aria-label={`Bigger photo of ${item.title}`}>
+          <button onClick={onPhoto} className="block w-full h-full"
+                  aria-label={photoTotal > 1 ? `See the ${photoTotal} photos of ${item.title}` : `Bigger photo of ${item.title}`}>
             <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+            {photoTotal > 1 && (
+              <span className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 text-xs font-semibold bg-black/60 text-white rounded-full px-3 py-1">
+                <Icon name="image" className="w-3.5 h-3.5" /> {photoTotal} photos
+              </span>
+            )}
           </button>
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-blue-300 text-sm">
@@ -778,7 +826,17 @@ function ItemCard({ item, onBook, onPhoto }) {
         )}
 
         {item.description && (
-          <p className="mt-2 text-slate-700 leading-relaxed whitespace-pre-line">{item.description}</p>
+          <>
+            <p ref={descRef} className={`mt-2 text-slate-700 leading-relaxed whitespace-pre-line ${expanded ? '' : 'line-clamp-5'}`}>
+              {item.description}
+            </p>
+            {(clipped || expanded) && (
+              <button onClick={() => setExpanded(!expanded)}
+                      className="mt-1 self-start text-sm font-semibold text-blue-700 hover:underline">
+                {expanded ? 'Show less' : 'Read more'}
+              </button>
+            )}
+          </>
         )}
 
         {links.length > 0 && (
@@ -803,21 +861,93 @@ function ItemCard({ item, onBook, onPhoto }) {
   );
 }
 
-function PhotoViewer({ item, onClose, onBook }) {
+// Galerie plein écran : on glisse du doigt d'une photo à l'autre (défilement
+// natif aimanté), flèches et clavier sur ordinateur. La couverture s'affiche
+// tout de suite, les autres arrivent dès qu'elles sont chargées.
+function PhotoViewer({ item, total, onClose, onBook }) {
   useOverlay(onClose);
+  const [photos, setPhotos] = useState(() =>
+    [item.image, ...Array.from({ length: Math.max(0, total - 1) }, () => null)]);
+  const [index, setIndex] = useState(0);
+  const stripRef = useRef(null);
+
+  useEffect(() => {
+    if (total < 2) return;
+    let alive = true;
+    fetchExtraPhotos(item.id)
+      .then((extras) => { if (alive) setPhotos([item.image, ...extras]); })
+      .catch(() => { if (alive) setPhotos([item.image]); });
+    return () => { alive = false; };
+  }, [item.id]);
+
+  const go = (i) => {
+    const el = stripRef.current;
+    const n = Math.max(0, Math.min(photos.length - 1, i));
+    if (el) el.scrollTo({ left: n * el.clientWidth, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight') go(index + 1);
+      if (e.key === 'ArrowLeft') go(index - 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const stop = (e) => e.stopPropagation();
+  const arrow = 'hidden sm:flex absolute top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 '
+    + 'text-white items-center justify-center disabled:opacity-0';
+
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={onClose}
          role="dialog" aria-modal="true" aria-label={item.title}>
       <div className="flex items-center justify-between gap-3 px-4 py-3 text-white">
         <p className="font-semibold truncate">{item.title}</p>
-        <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20 shrink-0" aria-label="Close">
-          <Icon name="x" className="w-6 h-6" />
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          {photos.length > 1 && <span className="text-sm text-white/70 tabular-nums">{index + 1} / {photos.length}</span>}
+          <button onClick={onClose} className="p-2 rounded-full bg-white/10 hover:bg-white/20" aria-label="Close">
+            <Icon name="x" className="w-6 h-6" />
+          </button>
+        </div>
       </div>
-      <div className="flex-1 min-h-0 flex items-center justify-center p-2">
-        <img src={item.image} alt={item.title} className="max-w-full max-h-full object-contain" />
+      <div className="relative flex-1 min-h-0">
+        <div ref={stripRef} className="h-full flex overflow-x-auto snap-x snap-mandatory no-scrollbar"
+             onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}>
+          {photos.map((src, i) => (
+            <div key={i} className="w-full h-full shrink-0 snap-center flex items-center justify-center p-2">
+              {src ? (
+                <img src={src} alt={`${item.title}, photo ${i + 1}`} onClick={stop}
+                     className="max-w-full max-h-full object-contain" />
+              ) : (
+                <span className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin" aria-label="Loading" />
+              )}
+            </div>
+          ))}
+        </div>
+        {photos.length > 1 && (
+          <>
+            <button onClick={(e) => { stop(e); go(index - 1); }} disabled={index === 0}
+                    className={`${arrow} left-4`} aria-label="Previous photo">
+              <Icon name="left" className="w-7 h-7" />
+            </button>
+            <button onClick={(e) => { stop(e); go(index + 1); }} disabled={index >= photos.length - 1}
+                    className={`${arrow} right-4`} aria-label="Next photo">
+              <Icon name="right" className="w-7 h-7" />
+            </button>
+          </>
+        )}
       </div>
-      <div className="p-4" onClick={(e) => e.stopPropagation()}>
+      {photos.length > 1 && (
+        <div className="flex justify-center gap-1 pt-3" onClick={stop}>
+          {photos.map((_, i) => (
+            <button key={i} onClick={() => go(i)} className="p-1" aria-label={`Photo ${i + 1}`} aria-current={i === index}>
+              <span className={`block w-2 h-2 rounded-full ${i === index ? 'bg-white' : 'bg-white/35'}`} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="p-4" onClick={stop}>
         <button onClick={onBook}
                 className="w-full max-w-md mx-auto flex items-center justify-center gap-2 font-semibold bg-white text-blue-800 rounded-xl py-3.5">
           <Icon name="calendar" className="w-5 h-5" /> Book a viewing · {showPrice(item.price)}
@@ -1155,7 +1285,8 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
 /* ============================ ADMIN (FR) =========================== */
 
 function Admin({ session, authReady, recovering, linkProblem, onRecovered,
-                 items, setItems, bookings, setBookings, settings, setSettings,
+                 items, setItems, manyPhotos, photoCounts, setPhotoCounts,
+                 bookings, setBookings, settings, setSettings,
                  newCount, reload, pushToast, onShop }) {
   const [tab, setTab] = useState('annonces');
 
@@ -1208,7 +1339,10 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
       </header>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8 print:p-0 print:max-w-none">
-        {tab === 'annonces' && <ItemsPanel items={items} setItems={setItems} pushToast={pushToast} />}
+        {tab === 'annonces' && (
+          <ItemsPanel items={items} setItems={setItems} manyPhotos={manyPhotos}
+                      photoCounts={photoCounts} setPhotoCounts={setPhotoCounts} pushToast={pushToast} />
+        )}
         {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
         {tab === 'affiche' && <PosterPanel items={items} settings={settings} />}
@@ -1446,40 +1580,130 @@ function NewPassword({ email, onDone }) {
 }
 
 // Menu « État » de l'annonce : `en` est ce qui est enregistré et affiché
-// dans la boutique, `fr` ce qu'on lit dans le menu, `sentence` la phrase
-// reprise dans la description.
+// dans la boutique, `fr` ce qu'on lit dans le menu, `sentences` les
+// tournures reprises dans la description.
 const CONDITIONS = [
-  { en: 'New', fr: 'Neuf', sentence: 'Brand new, never used.' },
-  { en: 'Like new', fr: 'Comme neuf', sentence: 'Barely used, it looks like new.' },
-  { en: 'Very good', fr: 'Très bon état', sentence: 'In very good condition.' },
-  { en: 'Good', fr: 'Bon état', sentence: 'In good condition, with light signs of use.' },
-  { en: 'Fair', fr: 'État correct, traces d’usure', sentence: 'In fair condition, with visible signs of wear.' },
+  { en: 'New', fr: 'Neuf', sentences: [
+    'Brand new, never used.',
+    'Never used, still exactly as it came from the shop.',
+  ] },
+  { en: 'Like new', fr: 'Comme neuf', sentences: [
+    'Barely used, it looks like new.',
+    'Hardly used and still looks as good as new.',
+  ] },
+  { en: 'Very good', fr: 'Très bon état', sentences: [
+    'In very good condition.',
+    'Well looked after and in very good condition.',
+  ] },
+  { en: 'Good', fr: 'Bon état', sentences: [
+    'In good condition, with light signs of use.',
+    'Good condition, just a few light marks from normal use.',
+  ] },
+  { en: 'Fair', fr: 'État correct, traces d’usure', sentences: [
+    'In fair condition, with visible signs of wear.',
+    'It shows some wear, and the price reflects that.',
+  ] },
 ];
 
 /* ------------------ description écrite toute seule ------------------ */
-// Pas d'IA : on colle des phrases toutes faites en anglais selon ce qui est
-// choisi dans le formulaire. `fr` est ce qu'on lit, `en` ce qui part dans
-// le texte. Rien de tout ça n'est enregistré, seule la description l'est.
+// Pas d'IA : on assemble des phrases toutes faites en anglais selon ce qui
+// est choisi dans le formulaire. `fr` est ce qu'on lit, `en` ce qui part
+// dans le texte. La plupart des phrases existent en plusieurs tournures :
+// le numéro `version` des choix décide lesquelles, pour que deux annonces
+// ne se ressemblent pas et que « Reformuler » donne un autre texte.
+// Les choix sont enregistrés avec l'annonce (colonne details).
+
+// `uses` : à quoi sert le meuble, une phrase par tournure. `long` : on
+// parle de longueur plutôt que de profondeur.
 const KINDS = [
-  { fr: 'Bureau', en: 'desk' },
-  { fr: 'Table', en: 'table' },
-  { fr: 'Table basse', en: 'coffee table' },
-  { fr: 'Table de chevet', en: 'bedside table' },
-  { fr: 'Chaise', en: 'chair' },
-  { fr: 'Chaise de bureau', en: 'office chair' },
-  { fr: 'Fauteuil', en: 'armchair' },
-  { fr: 'Canapé', en: 'sofa' },
-  { fr: 'Lit', en: 'bed' },
-  { fr: 'Matelas', en: 'mattress' },
-  { fr: 'Armoire', en: 'wardrobe' },
-  { fr: 'Commode', en: 'chest of drawers' },
-  { fr: 'Étagère', en: 'shelf' },
-  { fr: 'Bibliothèque', en: 'bookcase' },
-  { fr: 'Meuble TV', en: 'TV stand' },
-  { fr: 'Télé', en: 'TV' },
-  { fr: 'Lampe', en: 'lamp' },
-  { fr: 'Miroir', en: 'mirror' },
-  { fr: 'Tapis', en: 'rug' },
+  { fr: 'Bureau', en: 'desk', uses: [
+    'Ideal for working or studying from home.',
+    'Turns any corner into a home office.',
+  ] },
+  { fr: 'Table', en: 'table', uses: [
+    'Good for everyday meals or dinner with friends.',
+    'Works for meals, homework or board game nights.',
+  ] },
+  { fr: 'Table basse', en: 'coffee table', uses: [
+    'Just right in front of a sofa.',
+    'Handy for coffee, books and the remote.',
+  ] },
+  { fr: 'Table de chevet', en: 'bedside table', uses: [
+    'Room for a lamp, your phone and a book.',
+    'Fits nicely next to any bed.',
+  ] },
+  { fr: 'Chaise', en: 'chair', uses: [
+    'Works at a dining table or at a desk.',
+    'A simple, practical chair for every day.',
+  ] },
+  { fr: 'Chaise de bureau', en: 'office chair', uses: [
+    'Made for long hours at the desk.',
+    'A good companion for long study sessions.',
+  ] },
+  { fr: 'Fauteuil', en: 'armchair', uses: [
+    'Perfect for a reading corner.',
+    'A cosy seat for reading or watching TV.',
+  ] },
+  { fr: 'Canapé', en: 'sofa', uses: [
+    'Great for movie nights and having friends over.',
+    'The heart of a cosy living room.',
+  ] },
+  { fr: 'Lit', en: 'bed', long: true, uses: [
+    'Good for a bedroom or a guest room.',
+    'Ready for a good night’s sleep in your new place.',
+  ] },
+  { fr: 'Matelas', en: 'mattress', long: true, uses: [
+    'Saves you buying a new one for your new place.',
+    'A good night’s sleep without paying shop prices.',
+  ] },
+  { fr: 'Armoire', en: 'wardrobe', uses: [
+    'Plenty of room for your clothes.',
+    'Keeps your clothes tidy and out of sight.',
+  ] },
+  { fr: 'Commode', en: 'chest of drawers', uses: [
+    'Keeps clothes and bits and pieces tidy.',
+    'Great storage for a bedroom or a hallway.',
+  ] },
+  { fr: 'Étagère', en: 'shelf', uses: [
+    'Handy for books, plants or storage boxes.',
+    'Easy extra storage for any room.',
+  ] },
+  { fr: 'Bibliothèque', en: 'bookcase', uses: [
+    'Room for plenty of books and decorations.',
+    'Turns any wall into a little library.',
+  ] },
+  { fr: 'Meuble TV', en: 'TV stand', uses: [
+    'Keeps the TV corner tidy.',
+    'Room for a TV and everything that goes with it.',
+  ] },
+  { fr: 'Télé', en: 'TV', uses: [
+    'Ready for films, series and games.',
+    'Perfect for movie nights.',
+  ] },
+  { fr: 'Lampe', en: 'lamp', uses: [
+    'Adds a cosy light to any room.',
+    'Nice soft light for the evenings.',
+  ] },
+  { fr: 'Lampadaire', en: 'floor lamp', uses: [
+    'Lights up a living room corner nicely.',
+    'Adds a cosy light to any room.',
+  ] },
+  { fr: 'Miroir', en: 'mirror', uses: [
+    'Makes a room feel bigger and brighter.',
+    'Handy in a bedroom or a hallway.',
+  ] },
+  { fr: 'Tapis', en: 'rug', long: true, uses: [
+    'Warms up a room and softens the floor.',
+    'Makes a room feel finished and cosy.',
+  ] },
+  { fr: 'Tabouret', en: 'stool', uses: [
+    'Handy as an extra seat or a small side table.',
+    'Small and easy to tuck away.',
+  ] },
+  { fr: 'Portant', en: 'clothes rail', uses: [
+    'Keeps your clothes in sight and easy to reach.',
+    'Great extra hanging space.',
+  ] },
 ];
 
 // `adj` quand le mot change devant le nom (« wooden desk » mais « in wood »).
@@ -1512,7 +1736,7 @@ const COLOURS = [
   { fr: 'Rose', en: 'pink' },
 ];
 
-// Chaque atout complète « It … ».
+// Chaque atout complète « It … ». `for` : seulement pour ces types-là.
 const FEATURES = [
   { fr: 'Beaucoup de rangement', en: 'has plenty of storage' },
   { fr: 'Tiroirs', en: 'has drawers' },
@@ -1524,14 +1748,21 @@ const FEATURES = [
   { fr: 'Très confortable', en: 'is very comfortable' },
   { fr: 'Housse lavable', en: 'has a washable cover' },
   { fr: 'Marche parfaitement', en: 'works perfectly' },
+  { fr: 'Extensible', en: 'extends for extra guests', for: ['table'] },
+  { fr: 'Convertible en lit', en: 'turns into a bed', for: ['sofa'] },
+  { fr: 'Avec le matelas', en: 'comes with the mattress', for: ['bed'] },
+  { fr: 'Avec les coussins', en: 'comes with its cushions', for: ['sofa', 'armchair', 'chair'] },
+  { fr: 'Avec la télécommande', en: 'comes with the remote', for: ['TV'] },
+  { fr: 'Ampoule fournie', en: 'comes with a bulb', for: ['lamp', 'floor lamp'] },
 ];
 
-// Chaque défaut complète « Please note: … ».
+// Chaque défaut complète « Please note: … » et « it has … ».
 const FLAWS = [
   { fr: 'Petites rayures', en: 'a few small scratches' },
   { fr: 'Petite tache', en: 'a small stain' },
   { fr: 'Petit choc', en: 'a small dent' },
   { fr: 'Décoloré par le soleil', en: 'some sun fading' },
+  { fr: 'Tissu un peu usé', en: 'some wear on the fabric' },
   { fr: 'Un peu bancal', en: 'a slight wobble' },
   { fr: 'Vis manquante', en: 'a missing screw' },
 ];
@@ -1542,58 +1773,134 @@ const HOME = [
   { fr: 'Sans animaux', en: 'pet-free' },
 ];
 
+// Pour l'emporter : chaque choix est une phrase entière.
+const PICKUP = [
+  { fr: 'Rentre dans une voiture', en: 'It fits in a normal car.' },
+  { fr: 'Déjà démonté', en: 'It is already taken apart, so it is easy to transport.' },
+  { fr: 'Prévoir une camionnette', en: 'You will need a van or a big car to take it home.' },
+  { fr: 'Je peux aider à porter', en: 'I can help you carry it to your car.' },
+];
+
 const emptyDetails = {
-  kind: '', material: '', colour: '', brand: '', width: '', depth: '', height: '', tags: [],
+  kind: '', material: '', colour: '', brand: '', year: '', paid: '',
+  width: '', depth: '', height: '', tags: [], version: 0,
 };
 
+// Numéro de tournure tiré au hasard pour une nouvelle annonce : deux
+// meubles du même type ne reçoivent pas les mêmes phrases.
+const newVersion = () => Math.floor(Math.random() * 100000);
+
+// Choisit une des tournures, toujours la même pour un même numéro de
+// version et une même place dans le texte (`slot`).
+function pick(options, version, slot) {
+  let h = Math.imul(version | 0, 0x9e3779b1);
+  for (let i = 0; i < slot.length; i++) h = Math.imul(h ^ slot.charCodeAt(i), 0x01000193);
+  h ^= h >>> 15;
+  return options[(h >>> 0) % options.length];
+}
+
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const article = (word) => (/^[aeiou]/i.test(word) ? 'an' : 'a');
 // « a », « a and b », « a, b and c »
 const joinAnd = (list) =>
   list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+const fitsKind = (option, kind) => !option.for || option.for.includes(kind);
 
-// Ex. : « White oak desk from IKEA. It measures 120 cm wide and 60 cm deep.
-// It has drawers. In very good condition. Please note: a small stain. »
+// Titre proposé tant qu'on n'en a pas tapé un : « IKEA oak desk ».
+function suggestTitle(d) {
+  const kind = KINDS.find((k) => k.en === d.kind);
+  if (!kind) return '';
+  const material = MATERIALS.find((m) => m.en === d.material);
+  return cap([d.brand.trim(), material && (material.adj || material.en), kind.en].filter(Boolean).join(' '));
+}
+
+// Ex. : « A white oak desk from IKEA. Turns any corner into a home office.
+// Size: 120 × 60 × 75 cm (W × D × H). Good to know: it has drawers. I paid
+// 1.200 kr for it new, so you save 63%. Well looked after and in very good
+// condition. Please note: a small stain. It fits in a normal car. »
 function describeItem(item, d) {
   const kind = KINDS.find((k) => k.en === d.kind);
   const material = MATERIALS.find((m) => m.en === d.material);
   const brand = d.brand.trim();
   const from = brand ? ` from ${brand}` : '';
-  const picked = (list) => list.filter((o) => d.tags.includes(o.en)).map((o) => o.en);
+  const say = (options, slot) => pick(options, d.version, slot);
+  const picked = (list) => list.filter((o) => d.tags.includes(o.en) && fitsKind(o, d.kind)).map((o) => o.en);
   const sentences = [];
 
-  if (kind) {
-    const words = [d.colour, material && (material.adj || material.en), kind.en];
-    sentences.push(`${cap(words.filter(Boolean).join(' '))}${from}.`);
-  } else if ((item.title || '').trim() && (d.colour || material || brand)) {
+  // Ce que c'est.
+  const look = [d.colour, material && material.en].filter(Boolean).join(' ');
+  if (kind && (look || brand)) {
+    const thing = [d.colour, material && (material.adj || material.en), kind.en].filter(Boolean).join(' ');
+    const openers = [`${cap(thing)}${from}.`, `${cap(article(thing))} ${thing}${from}.`];
+    if (brand) openers.push(`${brand} ${thing}.`);
+    if (look) openers.push(`${cap(kind.en)} in ${look}${from}.`);
+    sentences.push(say(openers, 'open'));
+  } else if (!kind && (item.title || '').trim() && (look || brand)) {
     // Pas de type choisi : on part du titre de l'annonce.
-    const look = [d.colour, material && material.en].filter(Boolean).join(' ');
     sentences.push(`${item.title.trim()}${look ? ` in ${look}` : ''}${from}.`);
   }
 
-  const size = [['wide', d.width], ['deep', d.depth], ['high', d.height]]
-    .map(([word, v]) => [word, String(v).replace(/[^\d.,]/g, '')])
-    .filter(([, v]) => v)
-    .map(([word, v]) => `${v} cm ${word}`);
-  if (size.length) sentences.push(`It measures ${joinAnd(size)}.`);
+  // À quoi il sert.
+  if (kind) sentences.push(say(kind.uses, 'use'));
+
+  const long = kind && kind.long;
+  const sizes = [['wide', 'W', d.width], [long ? 'long' : 'deep', long ? 'L' : 'D', d.depth], ['high', 'H', d.height]]
+    .map(([word, letter, v]) => ({ word, letter, v: String(v || '').replace(/[^\d.,]/g, '') }))
+    .filter((s) => s.v);
+  if (sizes.length) {
+    const options = [`It measures ${joinAnd(sizes.map((s) => `${s.v} cm ${s.word}`))}.`];
+    if (sizes.length > 1) {
+      options.push(`Size: ${sizes.map((s) => s.v).join(' × ')} cm (${sizes.map((s) => s.letter).join(' × ')}).`);
+    }
+    sentences.push(say(options, 'size'));
+  }
 
   const features = picked(FEATURES);
-  if (features.length) sentences.push(`It ${joinAnd(features)}.`);
+  if (features.length) {
+    const list = joinAnd(features);
+    sentences.push(say([`It ${list}.`, `Good to know: it ${list}.`, `Bonus: it ${list}.`], 'features'));
+  }
+
+  // L'âge et le prix neuf font voir la bonne affaire.
+  const year = parseInt(d.year, 10);
+  const thisYear = new Date().getFullYear();
+  if (year >= 1950 && year <= thisYear) {
+    sentences.push(year === thisYear
+      ? say(['Bought this year.', 'I bought it earlier this year.'], 'year')
+      : say([`Bought in ${year}.`, `I bought it in ${year}.`], 'year'));
+  }
+  const paid = priceValue(d.paid);
+  const asking = priceValue(item.price);
+  if (paid > 0) {
+    const off = asking > 0 && asking < paid ? Math.round((1 - asking / paid) * 100) : 0;
+    sentences.push(off >= 10
+      ? say([`I paid ${fmtKr(paid)} for it new, so you save ${off}%.`,
+             `It cost ${fmtKr(paid)} new: you pay ${off}% less.`], 'paid')
+      : say([`It cost ${fmtKr(paid)} new.`, `I paid ${fmtKr(paid)} for it new.`], 'paid'));
+  }
 
   const condition = CONDITIONS.find((c) => c.en === item.condition);
-  if (condition) sentences.push(condition.sentence);
+  if (condition) sentences.push(say(condition.sentences, 'condition'));
 
   const flaws = picked(FLAWS);
-  if (flaws.length) sentences.push(`Please note: ${joinAnd(flaws)}.`);
+  if (flaws.length) {
+    const list = joinAnd(flaws);
+    sentences.push(say([`Please note: ${list}.`, `To be upfront, it has ${list}.`], 'flaws'));
+  }
 
   const home = picked(HOME);
-  if (home.length) sentences.push(`From a ${home.join(', ')} home.`);
+  if (home.length) {
+    sentences.push(say([`From a ${home.join(', ')} home.`, `It comes from a ${joinAnd(home)} home.`], 'home'));
+  }
+
+  sentences.push(...picked(PICKUP));
 
   return sentences.join(' ');
 }
 
 const emptyForm = {
   id: null, title: '', price: '', condition: '', description: '',
-  links: [], image: null, status: 'available', quantity: 1, sold_qty: 0,
+  links: [], image: null, photos: [], status: 'available', quantity: 1, sold_qty: 0,
   available_from: '', available_to: '', custom_schedule: false, weekdays: null, slots: null,
 };
 
@@ -1648,39 +1955,151 @@ function GoalProgress({ items }) {
   );
 }
 
-function ItemsPanel({ items, setItems, pushToast }) {
+// Photos d'une annonce. La première est la couverture : c'est elle qu'on
+// voit dans la liste, sur l'affiche et à la réservation.
+function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
+  const fileRef = useRef(null);
+  const [adding, setAdding] = useState(false);
+  const locked = adding || state === 'loading';
+
+  const onFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // pour pouvoir reprendre la même photo après l'avoir retirée
+    if (!files.length) return;
+    const room = MAX_PHOTOS - photos.length;
+    if (files.length > room) pushToast(`${MAX_PHOTOS} photos maximum par meuble.`);
+    setAdding(true);
+    const added = [];
+    for (const file of files.slice(0, Math.max(0, room))) {
+      try { added.push(await resizeImage(file)); }
+      catch { pushToast(`Photo illisible : ${file.name}`); }
+    }
+    setAdding(false);
+    onChange([...photos, ...added]);
+  };
+  const toFront = (i) => onChange([photos[i], ...photos.filter((_, j) => j !== i)]);
+  const remove = (i) => onChange(photos.filter((_, j) => j !== i));
+
+  return (
+    <div className="mt-4">
+      <span className="text-sm text-slate-600">Photos</span>
+      <span className="text-xs text-slate-500"> · la première sert de couverture, {MAX_PHOTOS} au plus</span>
+      <div className="mt-1 flex flex-wrap gap-2">
+        {photos.map((src, i) => (
+          <div key={i} className="relative w-24 h-20 rounded-lg overflow-hidden border border-slate-200 bg-white">
+            <img src={src} alt="" className="w-full h-full object-cover" />
+            {i === 0 ? (
+              <span className="absolute bottom-0 inset-x-0 bg-blue-700/90 text-white text-[11px] font-semibold text-center py-0.5">
+                Couverture
+              </span>
+            ) : (
+              <button type="button" onClick={() => toFront(i)} disabled={locked}
+                      className="absolute bottom-0 inset-x-0 bg-black/55 hover:bg-blue-700/90 text-white text-[11px] font-semibold py-0.5">
+                Mettre en 1re
+              </button>
+            )}
+            <button type="button" onClick={() => remove(i)} disabled={locked} aria-label="Retirer la photo"
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 shadow text-slate-600 hover:text-red-600 flex items-center justify-center">
+              <Icon name="x" className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+        {state === 'loading' && (
+          <div className="w-24 h-20 rounded-lg bg-white border border-slate-200 animate-pulse flex items-center justify-center text-[11px] text-slate-400">
+            Chargement…
+          </div>
+        )}
+        {photos.length < MAX_PHOTOS && (
+          <button type="button" onClick={() => fileRef.current && fileRef.current.click()} disabled={locked}
+                  className="w-24 h-20 rounded-lg border-2 border-dashed border-blue-200 bg-white text-blue-700 text-xs font-semibold flex flex-col items-center justify-center gap-1 hover:border-blue-400 disabled:opacity-60">
+            <Icon name={adding ? 'refresh' : 'plus'} className={`w-5 h-5 ${adding ? 'animate-spin' : ''}`} />
+            {adding ? 'Ajout…' : photos.length ? 'Ajouter' : 'Ajouter des photos'}
+          </button>
+        )}
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} className="hidden" />
+      {!manyPhotos && photos.length > 1 && (
+        <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Seule la couverture sera enregistrée tant que <code>migration-photos.sql</code> n’a pas été
+          lancé dans Supabase (SQL Editor), puis la page actualisée.
+        </p>
+      )}
+      {state === 'failed' && (
+        <p className="mt-1 text-xs text-slate-500">
+          Les autres photos de ce meuble n’ont pas pu être chargées : elles restent telles quelles.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, pushToast }) {
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // Choix qui servent à écrire la description (type, couleur, défauts…).
   const [details, setDetails] = useState(emptyDetails);
-  // Texte remplacé par « Réécrire », pour pouvoir revenir en arrière.
+  // Texte remplacé par « Reformuler », pour pouvoir revenir en arrière.
   const [beforeRewrite, setBeforeRewrite] = useState(null);
-  const fileRef = useRef(null);
+  // Photos en plus de l'annonce ouverte : 'loading' tant qu'elles arrivent,
+  // 'failed' si elles n'ont pas pu être lues (on n'y touche pas alors).
+  const [photoState, setPhotoState] = useState('ready');
+  // Numéro du dernier formulaire ouvert : une réponse qui arrive après
+  // qu'on en a ouvert un autre est ignorée.
+  const photoRequest = useRef(0);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
   // Le champ prix se tape sans « kr », il est rajouté à l'enregistrement.
-  const openForm = (f) => {
-    setForm({ ...f, price: withKr(f.price).replace(/ kr$/, '') });
-    setDetails(emptyDetails);
+  const openForm = (item) => {
+    const f = { ...emptyForm, ...item, links: item.links || [] };
+    setForm({ ...f, price: withKr(f.price).replace(/ kr$/, ''), photos: f.image ? [f.image] : [] });
+    setDetails({ ...emptyDetails, version: newVersion(), ...(item.details || {}) });
     setBeforeRewrite(null);
     setOpen(true);
+    const request = ++photoRequest.current;
+    const loadExtras = f.id && manyPhotos;
+    setPhotoState(loadExtras ? 'loading' : 'ready');
+    if (!loadExtras) return;
+    fetchExtraPhotos(f.id, true)
+      .then((extras) => {
+        if (request !== photoRequest.current) return;
+        setForm((cur) => ({ ...cur, photos: [...cur.photos, ...extras] }));
+        setPhotoCounts((c) => ({ ...c, [f.id]: extras.length }));
+        setPhotoState('ready');
+      })
+      .catch(() => { if (request === photoRequest.current) setPhotoState('failed'); });
+  };
+  const closeForm = () => {
+    photoRequest.current++;
+    setOpen(false);
+    setForm(emptyForm);
   };
 
   // Tant que la description n'a pas été retouchée à la main, elle suit les
-  // choix du formulaire. Une fois retouchée, on n'y touche plus.
+  // choix du formulaire. Une fois retouchée, on n'y touche plus. Le titre
+  // suit le type, la matière et la marque tant qu'on ne l'a pas tapé.
   const change = (nextForm, nextDetails) => {
     const follows = !(form.description || '').trim() || form.description === describeItem(form, details);
-    setForm(follows ? { ...nextForm, description: describeItem(nextForm, nextDetails) } : nextForm);
+    const titleFollows = nextDetails !== details && (!form.title.trim() || form.title === suggestTitle(details));
+    const f = titleFollows ? { ...nextForm, title: suggestTitle(nextDetails) } : nextForm;
+    setForm(follows ? { ...f, description: describeItem(f, nextDetails) } : f);
     setDetails(nextDetails);
   };
   const setDetail = (k, v) => change(form, { ...details, [k]: v });
   const toggleTag = (en) => setDetail('tags',
     details.tags.includes(en) ? details.tags.filter((t) => t !== en) : [...details.tags, en]);
 
+  // Une autre tournure à chaque clic. Avec peu de choix, un numéro voisin
+  // peut donner le même texte : on avance jusqu'à ce qu'il change.
   const rewrite = () => {
-    const text = describeItem(form, details);
+    let next = details;
+    for (let i = 1; i <= 12 && describeItem(form, next) === form.description; i++) {
+      next = { ...details, version: details.version + i };
+    }
+    const text = describeItem(form, next);
     if (!text) return pushToast('Choisis d’abord le type de meuble, l’état ou une couleur.');
-    if (form.description.trim() && form.description !== text) setBeforeRewrite(form.description);
+    if (form.description.trim() && form.description !== describeItem(form, details)) setBeforeRewrite(form.description);
+    setDetails(next);
     set('description', text);
   };
 
@@ -1690,13 +2109,15 @@ function ItemsPanel({ items, setItems, pushToast }) {
     const quantity = Math.min(20, totalQty(form));
     // Nombre baissé sous ce qui est déjà vendu : tout est parti.
     const sold_qty = Math.min(quantity, soldQty(form));
+    // La couverture reste dans items.image, les autres vont dans item_photos.
+    const [cover, ...extras] = form.photos;
     const payload = {
       title: form.title.trim(),
       price: withKr(form.price),
       condition: form.condition.trim(),
       description: form.description.trim(),
       links: (form.links || []).filter((l) => l.label.trim() && l.url.trim()),
-      image: form.image,
+      image: cover || null,
       status: sold_qty >= quantity ? 'sold' : (form.status || 'available'),
       available_from: form.available_from || null,
       available_to: form.available_to || null,
@@ -1707,19 +2128,43 @@ function ItemsPanel({ items, setItems, pushToast }) {
     // Avant migration-quantite.sql ces colonnes n'existent pas : on ne les
     // envoie que si la base les a déjà, ou s'il y a plusieurs exemplaires.
     if (quantity > 1 || items.some((i) => 'quantity' in i)) Object.assign(payload, { quantity, sold_qty });
+    // La colonne details arrive avec migration-photos.sql, comme item_photos.
+    if (manyPhotos) payload.details = details;
     let res;
     if (form.id) res = await sb.from('items').update(payload).eq('id', form.id).select().single();
     else res = await sb.from('items').insert(payload).select().single();
-    setBusy(false);
     // PGRST204 = colonne inconnue de la base.
     if (res.error && res.error.code === 'PGRST204') {
+      setBusy(false);
       return pushToast('Pour vendre plusieurs exemplaires, lance d’abord migration-quantite.sql dans Supabase (SQL Editor).');
     }
-    if (res.error) return pushToast('Enregistrement impossible, réessaie.');
-    setItems(form.id ? items.map((i) => (i.id === form.id ? res.data : i)) : [res.data, ...items]);
-    setOpen(false);
-    setForm(emptyForm);
-    pushToast(form.id ? 'Annonce mise à jour.' : 'Annonce publiée.');
+    if (res.error) {
+      setBusy(false);
+      return pushToast('Enregistrement impossible, réessaie.');
+    }
+    const saved = res.data;
+    setItems(form.id ? items.map((i) => (i.id === form.id ? saved : i)) : [saved, ...items]);
+
+    // Les autres photos, seulement si on sait ce qu'il y avait avant : sinon
+    // on effacerait celles qui n'ont pas pu être chargées.
+    if (manyPhotos && photoState === 'ready' && (extras.length || photoCounts[saved.id])) {
+      const { error } = extras.length
+        ? await sb.from('item_photos').upsert({ item_id: saved.id, photos: extras })
+        : await sb.from('item_photos').delete().eq('item_id', saved.id);
+      if (error) {
+        setBusy(false);
+        // L'annonce existe maintenant : réessayer la met à jour au lieu d'en créer une autre.
+        setForm((f) => ({ ...f, id: saved.id }));
+        return pushToast('Annonce enregistrée, mais pas les autres photos. Clique encore sur « Enregistrer ».');
+      }
+      extraPhotoCache.set(saved.id, extras);
+      setPhotoCounts((c) => ({ ...c, [saved.id]: extras.length }));
+    }
+    setBusy(false);
+    closeForm();
+    pushToast(extras.length && !manyPhotos
+      ? 'Annonce enregistrée avec la couverture seulement : lance migration-photos.sql pour garder plusieurs photos.'
+      : form.id ? 'Annonce mise à jour.' : 'Annonce publiée.');
   };
 
   const remove = async (item) => {
@@ -1745,12 +2190,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
     else pushToast('Remise en vente.');
   };
 
-  const onFile = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    try { set('image', await resizeImage(file)); }
-    catch { pushToast('Photo illisible, essaie une autre image.'); }
-  };
+  const kind = KINDS.find((k) => k.en === details.kind);
 
   return (
     <div>
@@ -1770,14 +2210,14 @@ function ItemsPanel({ items, setItems, pushToast }) {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <label className="block col-span-2">
-              <span className="text-sm text-slate-600">Titre</span>
+              <span className="text-sm text-slate-600">Titre <span className="text-slate-400">(en anglais)</span></span>
               <input value={form.title} onChange={(e) => change({ ...form, title: e.target.value }, details)}
-                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Bureau en chêne" />
+                     className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="Oak desk" />
             </label>
             <label className="block">
               <span className="text-sm text-slate-600">Prix</span>
               <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
-                <input value={form.price} onChange={(e) => set('price', e.target.value)} inputMode="decimal"
+                <input value={form.price} onChange={(e) => change({ ...form, price: e.target.value }, details)} inputMode="decimal"
                        className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="450" />
                 <span className="pr-3 text-slate-500">kr</span>
               </span>
@@ -1811,27 +2251,14 @@ function ItemsPanel({ items, setItems, pushToast }) {
             </select>
           </label>
 
-          <div className="mt-4">
-            <span className="text-sm text-slate-600">Photo</span>
-            <div className="mt-1 flex items-center gap-3">
-              <button onClick={() => fileRef.current && fileRef.current.click()}
-                      className="inline-flex items-center gap-2 border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm hover:border-blue-400">
-                <Icon name="image" className="w-4 h-4 text-blue-700" /> Choisir une image
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" onChange={onFile} className="hidden" />
-              {form.image && (
-                <div className="flex items-center gap-2">
-                  <img src={form.image} alt="" className="w-16 h-12 object-cover rounded border border-slate-200" />
-                  <button onClick={() => set('image', null)} className="text-sm text-slate-500 hover:text-red-600">Retirer</button>
-                </div>
-              )}
-            </div>
-          </div>
+          <PhotosEditor photos={form.photos} onChange={(p) => set('photos', p)} state={photoState}
+                        manyPhotos={manyPhotos} pushToast={pushToast} />
 
           <div className="mt-5 border-t border-blue-200 pt-4">
             <span className="font-semibold text-sm">Pour écrire la description</span>
             <p className="text-xs text-slate-500 mt-0.5">
               Coche ce qui correspond, la description en anglais s’écrit toute seule en dessous.
+              Plus tu en remplis, plus elle est précise.
             </p>
 
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1848,13 +2275,29 @@ function ItemsPanel({ items, setItems, pushToast }) {
               ))}
             </div>
 
-            <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 gap-3">
-              <label className="block col-span-3 sm:col-span-1">
-                <span className="text-sm text-slate-600">Marque</span>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <label className="block col-span-2 sm:col-span-1">
+                <span className="text-sm text-slate-600">Marque / modèle</span>
                 <input value={details.brand} onChange={(e) => setDetail('brand', e.target.value)}
-                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="IKEA" />
+                       className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="IKEA Malm" />
               </label>
-              {[['width', 'Largeur'], ['depth', 'Profondeur'], ['height', 'Hauteur']].map(([k, label]) => (
+              <label className="block">
+                <span className="text-sm text-slate-600">Acheté en</span>
+                <input value={details.year} onChange={(e) => setDetail('year', e.target.value)} inputMode="numeric"
+                       maxLength={4} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" placeholder="2023" />
+              </label>
+              <label className="block">
+                <span className="text-sm text-slate-600">Prix payé neuf</span>
+                <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+                  <input value={details.paid} onChange={(e) => setDetail('paid', e.target.value)} inputMode="decimal"
+                         className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="1200" />
+                  <span className="pr-3 text-slate-500 text-sm">kr</span>
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              {[['width', 'Largeur'], ['depth', kind && kind.long ? 'Longueur' : 'Profondeur'], ['height', 'Hauteur']].map(([k, label]) => (
                 <label key={k} className="block">
                   <span className="text-sm text-slate-600">{label}</span>
                   <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
@@ -1866,7 +2309,8 @@ function ItemsPanel({ items, setItems, pushToast }) {
               ))}
             </div>
 
-            {[['Atouts', FEATURES], ['Défauts à signaler', FLAWS], ['Chez toi', HOME]].map(([label, options]) => (
+            {[['Atouts', FEATURES.filter((o) => fitsKind(o, details.kind))], ['Défauts à signaler', FLAWS],
+              ['Chez toi', HOME], ['Pour l’emporter', PICKUP]].map(([label, options]) => (
               <div key={label} className="mt-3">
                 <span className="text-sm text-slate-600">{label}</span>
                 <div className="mt-1 flex flex-wrap gap-2">
@@ -1886,14 +2330,15 @@ function ItemsPanel({ items, setItems, pushToast }) {
               <label htmlFor="item-description" className="text-sm text-slate-600">Description (affichée en anglais)</label>
               <button type="button" onClick={rewrite}
                       className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900 whitespace-nowrap">
-                <Icon name="refresh" className="w-4 h-4" /> Réécrire
+                <Icon name="refresh" className="w-4 h-4" /> Reformuler
               </button>
             </div>
             <textarea id="item-description" value={form.description} onChange={(e) => set('description', e.target.value)}
-                      rows={4} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
-                      placeholder="White oak desk from IKEA. It measures 120 cm wide and 60 cm deep. In very good condition." />
+                      rows={5} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                      placeholder="A white oak desk from IKEA. Turns any corner into a home office. In very good condition." />
             <p className="mt-1 text-xs text-slate-500">
-              Tu peux retoucher le texte : il ne bougera plus tout seul. « Réécrire » repart de tes choix.
+              Tu peux retoucher le texte : il ne bougera plus tout seul. « Reformuler » repart de tes choix
+              avec d’autres phrases, à chaque clic.
               {beforeRewrite != null && (
                 <button type="button" onClick={() => { set('description', beforeRewrite); setBeforeRewrite(null); }}
                         className="ml-2 underline hover:text-blue-700">
@@ -1988,11 +2433,11 @@ function ItemsPanel({ items, setItems, pushToast }) {
           </div>
 
           <div className="mt-5 flex gap-2">
-            <button onClick={submit} disabled={busy}
+            <button onClick={submit} disabled={busy || photoState === 'loading'}
                     className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-5 py-2.5 text-sm">
               {busy ? 'Enregistrement…' : form.id ? 'Enregistrer les modifications' : 'Publier l’annonce'}
             </button>
-            <button onClick={() => { setOpen(false); setForm(emptyForm); }} className="text-sm text-slate-600 hover:text-slate-900 px-4">
+            <button onClick={closeForm} className="text-sm text-slate-600 hover:text-slate-900 px-4">
               Annuler
             </button>
           </div>
@@ -2024,6 +2469,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
                       : null,
                     item.available_to ? `jusqu’au ${String(item.available_to).slice(8, 10)}/${String(item.available_to).slice(5, 7)}` : null,
                     item.custom_schedule ? 'horaires propres' : null,
+                    photoCounts[item.id] ? `${photoCounts[item.id] + 1} photos` : null,
                     Array.isArray(item.links) && item.links.length ? item.links.map((l) => l.label).join(', ') : null,
                   ].filter(Boolean).join(' · ')}
                 </p>
@@ -2046,7 +2492,7 @@ function ItemsPanel({ items, setItems, pushToast }) {
                     {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
                   </button>
                 )}
-                <button onClick={() => openForm({ ...emptyForm, ...item, links: item.links || [] })}
+                <button onClick={() => openForm(item)}
                         className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
                   <Icon name="pencil" className="w-4 h-4" />
                 </button>
