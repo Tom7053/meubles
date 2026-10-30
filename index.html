@@ -64,6 +64,9 @@
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .pst-top { padding: 20mm 18mm 0; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  /* Le contenu du haut, réduit d'un bloc (zoom) quand il ne tient pas
+     au-dessus du bandeau ; la marge du bas l'en tient toujours écarté. */
+  .pst-fit { display: flex; flex-direction: column; padding-bottom: 7mm; }
   .pst-eyebrow { font-size: 13pt; color: #1d4ed8; margin: 0 0 10mm; display: flex; align-items: center; gap: 10px; }
   .pst-eyebrow::before { content: ""; flex: none; width: 18mm; height: 3px; background: #1d4ed8; }
   .pst-title {
@@ -82,7 +85,11 @@
   .pst-qty { font-weight: 400; color: #5b6b82; }
   .pst-dots { flex: 1; min-width: 4mm; border-bottom: 1.5px dotted #b9c9e6; transform: translateY(-4px); }
   .pst-price { font-weight: 600; color: #1d4ed8; white-space: nowrap; }
-  .pst-more { margin: 5mm 0 0; font-size: 12.5pt; color: #5b6b82; }
+  .pst-more { margin: 7mm 0 0; font-size: 13pt; line-height: 1.6; color: #2b3a52; }
+  .pst-more-label { display: block; font-weight: 600; color: #1d4ed8; margin-bottom: 1mm; }
+  /* Un nom ne se coupe pas en fin de ligne, le point reste derrière lui. */
+  .pst-more-item { display: inline-block; max-width: 100%; }
+  .pst-more-item:not(:last-child)::after { content: "\00a0\00b7"; color: #9fb3d9; font-weight: 700; }
   .pst-band { background: #16307a; color: #fff; padding: 12mm 18mm; display: flex; gap: 12mm; align-items: center; flex: none; }
   .pst-qr { background: #fff; padding: 4mm; border-radius: 4mm; line-height: 0; flex: none; }
   .pst-qr img, .pst-qr-empty { display: block; width: 38mm; height: 38mm; }
@@ -125,7 +132,7 @@
    Boutique en anglais, espace vendeur en français, données sur Supabase.
    ===================================================================== */
 
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useCallback } = React;
 
 const configured =
   window.CONFIG.SUPABASE_URL.indexOf('TON-PROJET') === -1 &&
@@ -2899,9 +2906,12 @@ function PosterPanel({ items, settings }) {
   const [twoUp, setTwoUp] = useState(() => readStored(POSTER_TWO_UP_KEY, false) === true);
   const [link, setLink] = useState(SITE_URL);
   const [frameWidth, setFrameWidth] = useState(A4_PX.w / 2);
+  // Taille du haut de l'affiche (1 = normale), réduite pour que tout tienne.
+  const [fit, setFit] = useState(1);
   const [overflow, setOverflow] = useState(false);
   const frameRef = useRef(null);
   const topRef = useRef(null);
+  const fitRef = useRef(null);
   const qr = useQrCode(link.trim());
 
   // Rien d'enregistré encore : tous les meubles en vente sont cochés.
@@ -2910,9 +2920,15 @@ function PosterPanel({ items, settings }) {
   const others = available.filter((i) => !picked.has(i.id));
   // Plus il y a de meubles, plus la liste se resserre (puis passe sur deux colonnes).
   const density = onPoster.length > 10 ? 'is-compact is-cols' : onPoster.length > 6 ? 'is-compact' : '';
-  const moreText = others.length
-    ? `+ ${others.slice(0, 6).map((i) => i.title).join(', ')}${others.length > 6 ? '…' : ''}`
-    : null;
+  // Les meubles non cochés sont tous cités, par leur nom. Deux annonces du
+  // même nom (deux lampes différentes) n'en font qu'une : « Lamp ×2 ».
+  const otherNames = [];
+  others.forEach((item) => {
+    const title = item.title.trim();
+    const same = otherNames.find((o) => o.title.toLowerCase() === title.toLowerCase());
+    if (same) same.count += leftQty(item);
+    else otherNames.push({ title, count: leftQty(item) });
+  });
 
   const savePicks = (ids) => { setPicks(ids); writeStored(POSTER_PICKS_KEY, ids); };
   const toggle = (id) => savePicks(picked.has(id) ? [...picked].filter((x) => x !== id) : [...picked, id]);
@@ -2940,46 +2956,75 @@ function PosterPanel({ items, settings }) {
     return () => ro.disconnect();
   }, []);
 
-  // Prévient quand la liste ne tient plus sur la page.
-  useEffect(() => {
-    const el = topRef.current;
-    if (!el) return;
-    const check = () => setOverflow(el.scrollHeight > el.clientHeight + 2);
-    check();
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
+  // Tout doit tenir au-dessus du bandeau bleu : on cherche la plus grande
+  // taille qui tient, sans descendre sous 60 %. On essaie directement sur
+  // la première affiche, avant l'affichage ; si même à 60 % ça ne tient
+  // pas, on prévient.
+  useLayoutEffect(() => {
+    const top = topRef.current;
+    const inner = fitRef.current;
+    if (!top || !inner) return;
+    const fits = () => top.scrollHeight <= top.clientHeight + 1;
+    const measure = () => {
+      let z = 1;
+      inner.style.zoom = z;
+      while (!fits() && z > 0.6) {
+        z = Math.round((z - 0.02) * 100) / 100;
+        inner.style.zoom = z;
+      }
+      setFit(z);
+      setOverflow(!fits());
+    };
+    measure();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(measure);
   });
 
   // Une affiche. En 2 par feuille elle est dessinée deux fois, identiques
   // (un texte retouché sur l'une change aussi l'autre) ; seule la première
-  // sert à détecter le débordement.
+  // sert à mesurer la place.
   const sheet = (main) => (
     <div className="pst-sheet">
       <div className="pst-top" ref={main ? topRef : null}>
-        <p className="pst-eyebrow">
-          <PosterText as="span" field="eyebrow" {...edit}>My internship ends on 20 November</PosterText>
-        </p>
-        <PosterText as="h1" field="title" className="pst-title" {...edit}>{'Everything\nmust go'}</PosterText>
-        <PosterText as="p" field="lede" className="pst-lede" {...edit}>
-          I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.
-        </PosterText>
+        <div className="pst-fit" ref={main ? fitRef : null} style={{ zoom: fit }}>
+          <p className="pst-eyebrow">
+            <PosterText as="span" field="eyebrow" {...edit}>My internship ends on 20 November</PosterText>
+          </p>
+          <PosterText as="h1" field="title" className="pst-title" {...edit}>{'Everything\nmust go'}</PosterText>
+          <PosterText as="p" field="lede" className="pst-lede" {...edit}>
+            I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.
+          </PosterText>
 
-        {onPoster.length > 0 && (
-          <ul className={`pst-list ${density}`}>
-            {onPoster.map((item) => (
-              <li key={item.id}>
-                <span className="pst-name">
-                  {item.title}{leftQty(item) > 1 && <span className="pst-qty"> ×{leftQty(item)}</span>}
-                </span>
-                <span className="pst-dots" />
-                <span className="pst-price">
-                  {showPrice(item.price)}
-                  {leftQty(item) > 1 && priceValue(item.price) > 0 && <span className="pst-qty"> each</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {moreText && <p className="pst-more">{moreText}</p>}
+          {onPoster.length > 0 && (
+            <ul className={`pst-list ${density}`}>
+              {onPoster.map((item) => (
+                <li key={item.id}>
+                  <span className="pst-name">
+                    {item.title}{leftQty(item) > 1 && <span className="pst-qty"> ×{leftQty(item)}</span>}
+                  </span>
+                  <span className="pst-dots" />
+                  <span className="pst-price">
+                    {showPrice(item.price)}
+                    {leftQty(item) > 1 && priceValue(item.price) > 0 && <span className="pst-qty"> each</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {otherNames.length > 0 && (
+            <p className="pst-more">
+              <PosterText as="span" field="moreLabel" className="pst-more-label" {...edit}>
+                {onPoster.length ? 'Also for sale' : 'For sale'}
+              </PosterText>
+              {otherNames.map((o) => (
+                <React.Fragment key={o.title}>
+                  <span className="pst-more-item">
+                    {o.title}{o.count > 1 && <span className="pst-qty"> ×{o.count}</span>}
+                  </span>{' '}
+                </React.Fragment>
+              ))}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="pst-band">
@@ -3083,15 +3128,20 @@ function PosterPanel({ items, settings }) {
           </div>
         </section>
 
-        {overflow && (
+        {overflow ? (
           <div className="flex gap-2 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5 text-sm text-amber-900">
             <Icon name="alert" className="w-4 h-4 mt-0.5 shrink-0" />
-            L’affiche déborde : décoche un meuble ou raccourcis un texte.
+            Même en réduisant le texte, l’affiche déborde : décoche des meubles (ils passent dans
+            la ligne du bas, plus courte) ou raccourcis un texte.
           </div>
+        ) : fit < 1 && (
+          <p className="text-xs text-slate-500">
+            Texte du haut réduit à {Math.round(fit * 100)} % pour que tout tienne au-dessus du bandeau bleu.
+          </p>
         )}
 
         <div>
-          <button onClick={() => window.print()} disabled={onPoster.length === 0 && !moreText}
+          <button onClick={() => window.print()} disabled={available.length === 0}
                   className="w-full inline-flex items-center justify-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg py-3">
             Imprimer / Enregistrer en PDF
           </button>

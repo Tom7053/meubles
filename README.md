@@ -104,8 +104,10 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
   Il faut avoir lancé `migration-quantite.sql` une fois.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
-- **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix, clique sur un
-  texte pour le modifier, choisis les paiements affichés en bas (Revolut et Cash au
+- **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
+  autres sont cités dessous, sous « Also for sale ». Si tout ne tient pas au-dessus
+  du bandeau bleu, le haut de l'affiche rapetisse tout seul (60 % au plus petit,
+  sinon un message prévient). Clique sur un texte pour le modifier, choisis les paiements affichés en bas (Revolut et Cash au
   départ, on en retire ou on en ajoute), choisis le **format** : **1 par feuille**
   (une affiche A4) ou **2 par feuille** (deux affiches A5 identiques sur un A4 en
   paysage, à couper le long des pointillés), puis **Imprimer / Enregistrer en PDF**
