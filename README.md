@@ -16,6 +16,7 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `migration-photos.sql` | Supabase, SQL Editor | une fois, **pour mettre plusieurs photos par meuble** et retrouver les choix de la description en rouvrant une annonce (sans risque à relancer) |
 | `migration-stats.sql` | Supabase, SQL Editor | une fois, **pour l'onglet Stats** (visites, scans du QR code, meubles les plus vus). **Si tu l'avais déjà lancé, relance-le** : la nouvelle version permet d'effacer ta propre visite quand tu te connectes (sans risque à relancer) |
 | `migration-prix-vente.sql` | Supabase, SQL Editor | une fois, **pour noter le prix de vente réel** quand tu as négocié (sans risque à relancer) |
+| `migration-reservation.sql` | Supabase, SQL Editor | une fois, **pour qu'un meuble réservé quitte la boutique** et noter vendu / invendu après le rendez-vous (sans risque à relancer) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
@@ -111,6 +112,16 @@ connecte-toi avec l'e-mail de l'étape 3. Cinq onglets :
   autre prix, il faut avoir lancé `migration-prix-vente.sql` une fois ; sans lui, on
   ne peut vendre qu'au prix affiché.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
+  **Meuble réservé** : dès qu'un acheteur prend rendez-vous, le meuble quitte la
+  boutique, personne d'autre ne peut le réserver (pour 2 lits, seuls ceux réservés
+  partent). Dans Annonces, il est marqué « réservé par Marie, rdv le 02/11 à 14:00 ».
+  Sous chaque rendez-vous, note ensuite **Vendu** ou **Invendu** :
+  **Vendu** demande à quel prix (au prix affiché, ou à un autre montant si tu as
+  négocié) et compte la vente comme « Marquer vendu » ; **Invendu** remet le meuble
+  dans la boutique. **Refuser** ou supprimer le rendez-vous le remet aussi en vente.
+  Une fois l'heure passée, le rendez-vous affiche en orange « vendu ou invendu ? » :
+  tant que tu n'as pas répondu, le meuble reste hors de la boutique.
+  Il faut avoir lancé `migration-reservation.sql` une fois.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
   autres sont cités dessous, sous « Also for sale ». Si tout ne tient pas au-dessus

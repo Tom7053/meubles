@@ -251,6 +251,20 @@ const soldAmount = (item) => {
 const priceFor = (raw, count) =>
   count > 1 && priceValue(raw) > 0 ? fmtKr(priceValue(raw) * count) : showPrice(raw);
 
+/* --------------------------- meubles réservés ----------------------- */
+// Un rendez-vous retient le meuble (ou les exemplaires demandés) : il quitte
+// la boutique jusqu'à ce que le vendeur note « vendu » ou « invendu ».
+// Avant migration-reservation.sql la colonne outcome n'existe pas : rien
+// n'est retenu.
+const isPending = (b) => 'outcome' in b && b.status !== 'declined' && !b.outcome;
+
+// Exemplaires retenus, par meuble. Les acheteurs ne lisent pas les
+// rendez-vous : la vue booked_items ne leur donne que ces totaux.
+async function fetchHeld() {
+  const { data, error } = await sb.from('booked_items').select('item_id, qty');
+  return error || !data ? {} : Object.fromEntries(data.map((r) => [r.item_id, r.qty]));
+}
+
 /* ---------------------------- fin de vente -------------------------- */
 // Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
 // les calendriers s'arrêtent là et on ne peut pas aller au mois suivant.
@@ -544,6 +558,8 @@ function App() {
   const [items, setItems] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState([]);
+  // Exemplaires retenus par un rendez-vous, par meuble (fetchHeld).
+  const [held, setHeld] = useState({});
   const [bookings, setBookings] = useState([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -602,6 +618,8 @@ function App() {
     window.scrollTo(0, 0);
   };
   const goShop = () => {
+    // Le vendeur a pu noter des ventes entre-temps.
+    refreshHeld();
     setRoute('shop');
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
     window.scrollTo(0, 0);
@@ -610,22 +628,30 @@ function App() {
   /* ---- données publiques ---- */
   const loadPublic = useCallback(async () => {
     if (!sb) return setReady(true);
-    const [it, st, bs, ph] = await Promise.all([
+    const [it, st, bs, ph, hd] = await Promise.all([
       sb.from('items').select('*').order('created_at', { ascending: false }),
       sb.from('settings').select('*').eq('id', 1).maybeSingle(),
       sb.from('busy_slots').select('day, slot'),
       // Seulement les nombres, pas les photos.
       sb.from('item_photos').select('item_id, photo_count'),
+      fetchHeld(),
     ]);
     if (it.data) setItems(it.data);
     if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
     if (bs.data) setBusy(bs.data);
+    setHeld(hd);
     setManyPhotos(!ph.error);
     if (ph.data) setPhotoCounts(Object.fromEntries(ph.data.map((r) => [r.item_id, r.photo_count])));
     extraPhotoCache.clear();
     setLoadFailed(!!it.error);
     setReady(true);
   }, []);
+
+  const refreshHeld = useCallback(async () => {
+    if (sb) setHeld(await fetchHeld());
+  }, []);
+
+  const markBusy = (row) => setBusy((prev) => [...prev, { day: row.day, slot: row.slot }]);
 
   const loadBookings = useCallback(async () => {
     if (!sb || !session) return;
@@ -674,11 +700,18 @@ function App() {
           photoCounts={photoCounts}
           settings={settings}
           busy={busy}
+          held={held}
           ready={ready}
           loadFailed={loadFailed}
           onRetry={() => { setReady(false); loadPublic(); }}
           onAdmin={goAdmin}
-          onBooked={(row) => setBusy((prev) => [...prev, { day: row.day, slot: row.slot }])}
+          onSlotTaken={markBusy}
+          onBooked={(row) => {
+            markBusy(row);
+            // Le meuble quitte la liste tout de suite, sans recharger.
+            setHeld((prev) => ({ ...prev, [row.item_id]: (prev[row.item_id] || 0) + (row.quantity || 1) }));
+          }}
+          onItemTaken={refreshHeld}
         />
       ) : (
         <Admin
@@ -745,10 +778,13 @@ function useOverlay(onClose) {
   }, []);
 }
 
-function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, onAdmin, onBooked }) {
+function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onRetry, onAdmin,
+                onSlotTaken, onBooked, onItemTaken }) {
   const [booking, setBooking] = useState(null);
   const [photo, setPhoto] = useState(null);
-  const available = items.filter((i) => i.status !== 'sold');
+  // Exemplaires encore libres : ni vendus, ni retenus par un rendez-vous.
+  const freeQty = (item) => Math.max(0, leftQty(item) - (held[item.id] || 0));
+  const available = items.filter((i) => i.status !== 'sold' && freeQty(i) > 0);
   const photoTotal = (item) => (item.image ? 1 + (photoCounts[item.id] || 0) : 0);
 
   const steps = [
@@ -833,7 +869,7 @@ function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, 
         ) : (
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {available.map((item) => (
-              <ItemCard key={item.id} item={item} photoTotal={photoTotal(item)}
+              <ItemCard key={item.id} item={item} left={freeQty(item)} photoTotal={photoTotal(item)}
                         onBook={() => { track('item_book', item.id); setBooking(item); }}
                         onPhoto={() => { track('item_photos', item.id); setPhoto(item); }} />
             ))}
@@ -856,10 +892,13 @@ function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, 
       {booking && (
         <BookingSheet
           item={booking}
+          left={freeQty(booking)}
           busy={busy}
           settings={settings}
           onClose={() => setBooking(null)}
-          onTaken={onBooked}
+          onTaken={onSlotTaken}
+          onBooked={onBooked}
+          onItemTaken={onItemTaken}
         />
       )}
       {photo && (
@@ -874,7 +913,7 @@ function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, 
   );
 }
 
-function ItemCard({ item, photoTotal, onBook, onPhoto }) {
+function ItemCard({ item, left, photoTotal, onBook, onPhoto }) {
   const links = Array.isArray(item.links) ? item.links : [];
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
   const several = totalQty(item) > 1;
@@ -943,7 +982,7 @@ function ItemCard({ item, photoTotal, onBook, onPhoto }) {
           <p className="mt-1 text-sm text-slate-500">
             {several && (
               <span className="font-semibold text-blue-800">
-                {leftQty(item) > 1 ? `${leftQty(item)} available` : 'Last one left'}
+                {left > 1 ? `${left} available` : 'Last one left'}
               </span>
             )}
             {several && item.condition && ' · '}
@@ -1104,7 +1143,7 @@ function PickupMap({ address }) {
   );
 }
 
-function BookingSheet({ item, busy, settings, onClose, onTaken }) {
+function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, onItemTaken }) {
   const plan = scheduleFor(item, settings);
   const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
   const days = bookableDays(plan, taken);
@@ -1116,12 +1155,14 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
   const [firstName, setFirstName] = useState('');
   const [phone, setPhone] = useState('');
   const [payment, setPayment] = useState('');
-  // Plusieurs exemplaires en vente : l'acheteur dit combien il en prend.
-  const left = leftQty(item);
+  // Plusieurs exemplaires en vente : l'acheteur dit combien il en prend
+  // (`left` : ceux qui ne sont ni vendus ni réservés).
   const [count, setCount] = useState(1);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [done, setDone] = useState(null);
+  // Quelqu'un d'autre vient de réserver le dernier exemplaire.
+  const gone = !done && left < 1;
   const bodyRef = useRef(null);
   const timesRef = useRef(null);
   useOverlay(onClose);
@@ -1173,8 +1214,16 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
       onTaken(row);
       return backToTimes('Sorry, someone just took that time. Please pick another one.');
     }
+    // item_taken = quelqu'un d'autre vient de réserver ce meuble
+    // (migration-reservation.sql). La liste est relue : s'il n'en reste
+    // plus, la fenêtre le dit.
+    if (err && err.message === 'item_taken') {
+      setCount(1);
+      onItemTaken();
+      return setError('Sorry, someone else just booked this item.');
+    }
     if (err) return setError('Something went wrong. Please try again.');
-    onTaken(row);
+    onBooked(row);
     setDone(row);
   };
 
@@ -1348,6 +1397,15 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
     </div>
   );
 
+  const goneView = (
+    <div className="px-5 py-14 text-center">
+      <h3 className="display font-bold text-2xl">Just booked by someone else</h3>
+      <p className="mt-2 text-slate-600 leading-relaxed">
+        Sorry, {item.title} is no longer available. Have a look at the other items.
+      </p>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-40 sm:bg-slate-900/50 sm:flex sm:items-center sm:justify-center sm:p-4"
          onClick={onClose}>
@@ -1355,14 +1413,14 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
            className="bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
-          {step === 2 && !done ? (
+          {step === 2 && !done && !gone ? (
             <button onClick={() => backToTimes()} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
               <Icon name="left" className="w-6 h-6" />
             </button>
           ) : <span className="w-11" />}
           <div className="flex-1 text-center min-w-0">
             <p className="font-semibold truncate">{done ? 'Booking sent' : 'Book a viewing'}</p>
-            {!done && <p className="text-xs text-slate-500">Step {step} of 2</p>}
+            {!done && !gone && <p className="text-xs text-slate-500">Step {step} of 2</p>}
           </div>
           <button onClick={onClose} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Close">
             <Icon name="x" className="w-6 h-6" />
@@ -1370,7 +1428,7 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
         </div>
 
         <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain">
-          {done ? doneView : (
+          {done ? doneView : gone ? goneView : (
             <div className="px-5 py-5">
               <div className="flex items-center gap-3 pb-5 mb-5 border-b border-slate-100">
                 <div className="w-14 h-14 rounded-xl bg-blue-50 overflow-hidden shrink-0 flex items-center justify-center">
@@ -1390,8 +1448,8 @@ function BookingSheet({ item, busy, settings, onClose, onTaken }) {
         </div>
 
         <div className="border-t border-slate-200 bg-white px-5 py-3 shrink-0">
-          {error && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
-          {done ? (
+          {error && !gone && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
+          {done || gone ? (
             <button onClick={onClose} className={PRIMARY_BTN}>Back to the list</button>
           ) : step === 1 ? (
             <button onClick={() => setStep(2)} disabled={!slot} className={PRIMARY_BTN}>
@@ -1467,10 +1525,13 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
 
       <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8 print:p-0 print:max-w-none">
         {tab === 'annonces' && (
-          <ItemsPanel items={items} setItems={setItems} manyPhotos={manyPhotos}
+          <ItemsPanel items={items} setItems={setItems} manyPhotos={manyPhotos} bookings={bookings}
                       photoCounts={photoCounts} setPhotoCounts={setPhotoCounts} pushToast={pushToast} />
         )}
-        {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
+        {tab === 'rdv' && (
+          <BookingsPanel bookings={bookings} setBookings={setBookings}
+                         items={items} setItems={setItems} pushToast={pushToast} />
+        )}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
         {tab === 'affiche' && <PosterPanel items={items} settings={settings} />}
         {tab === 'stats' && <StatsPanel items={items} bookings={bookings} />}
@@ -2166,11 +2227,37 @@ function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
   );
 }
 
-// Au moment de marquer un meuble (ou un exemplaire) vendu : au prix
-// affiché, ou au prix obtenu après négociation. `onConfirm` reçoit le prix
-// en kr et renvoie true si la vente est enregistrée.
-function SalePrompt({ item, onConfirm, onCancel }) {
+// Ce qu'il faut écrire dans `items` quand `n` exemplaires sont vendus.
+// `prices` : prix en kr de ceux qui viennent de partir, un par exemplaire
+// (le prix affiché pour ceux qui manquent). Tout vendu : l'annonce quitte
+// la boutique. null si un prix négocié ne peut pas être gardé, faute
+// d'avoir lancé migration-prix-vente.sql.
+function soldPatch(item, n, prices = []) {
+  const total = totalQty(item);
+  const sold_qty = Math.max(0, Math.min(total, n));
+  const status = sold_qty >= total ? 'sold' : 'available';
+  // Sans migration-quantite.sql, seul le statut existe.
+  const patch = 'sold_qty' in item ? { status, sold_qty } : { status };
+  // Des exemplaires en plus : leurs prix s'ajoutent ; en moins : les
+  // derniers prix notés s'en vont.
   const listed = priceValue(item.price);
+  const added = sold_qty - soldQty(item);
+  if ('sale_prices' in item) {
+    const noted = salePrices(item);
+    patch.sale_prices = added > 0
+      ? [...noted, ...Array.from({ length: added }, (_, i) => (i < prices.length ? prices[i] : listed))]
+      : noted.slice(0, sold_qty);
+  } else if (prices.some((p) => p !== listed)) return null;
+  return patch;
+}
+
+// Au moment de marquer un meuble (ou un exemplaire) vendu : au prix
+// affiché, ou au prix obtenu après négociation. `count` exemplaires
+// partent ensemble (rendez-vous pour 2 lits) : le montant est pour tous.
+// `onConfirm` reçoit le montant en kr et renvoie true si la vente est
+// enregistrée.
+function SalePrompt({ item, count = 1, onConfirm, onCancel }) {
+  const listed = priceValue(item.price) * count;
   const canHaggle = 'sale_prices' in item;
   const [other, setOther] = useState(false);
   const [price, setPrice] = useState('');
@@ -2188,16 +2275,22 @@ function SalePrompt({ item, onConfirm, onCancel }) {
 
   return (
     <form onSubmit={submit} className="mt-3 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 text-sm">
-      <p className="font-semibold">{totalQty(item) > 1 ? 'Cet exemplaire est vendu à quel prix ?' : 'Vendu à quel prix ?'}</p>
+      <p className="font-semibold">
+        {count > 1 ? `Les ${count} sont vendus à quel prix ?`
+          : totalQty(item) > 1 ? 'Cet exemplaire est vendu à quel prix ?' : 'Vendu à quel prix ?'}
+      </p>
       <label className="mt-2 flex items-center gap-2 cursor-pointer">
         <input type="radio" checked={!other} onChange={() => setOther(false)} className="w-4 h-4 accent-blue-700" />
-        Au prix affiché : <strong>{withKr(item.price) || 'gratuit'}</strong>
+        <span>
+          Au prix affiché : <strong>{count > 1 && listed > 0 ? fmtKr(listed) : withKr(item.price) || 'gratuit'}</strong>
+          {count > 1 && listed > 0 && <span className="text-slate-500"> ({count} × {withKr(item.price)})</span>}
+        </span>
       </label>
       <div className={`mt-2 flex flex-wrap items-center gap-2 ${canHaggle ? '' : 'text-slate-400'}`}>
         <label className={`flex items-center gap-2 ${canHaggle ? 'cursor-pointer' : ''}`}>
           <input type="radio" checked={other} disabled={!canHaggle} onChange={() => setOther(true)}
                  className="w-4 h-4 accent-blue-700" />
-          À un autre prix (négocié)
+          {count > 1 ? 'À un autre montant, en tout (négocié)' : 'À un autre prix (négocié)'}
         </label>
         <span className="flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
           <input value={price} disabled={!canHaggle} onFocus={() => setOther(true)}
@@ -2232,7 +2325,27 @@ function soldNote(item) {
   return `${n > 1 ? `${n} vendus` : 'vendu'} ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (affiché ${fmtKr(listed)})` : ''}`;
 }
 
-function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, pushToast }) {
+// Sous un rendez-vous vendu : « Vendu 400 kr (affiché 450 kr) ».
+function saleNote(b, item) {
+  if (b.sale_price == null) return 'Vendu';
+  const got = Number(b.sale_price);
+  const listed = item ? priceValue(item.price) * (b.quantity || 1) : got;
+  if (!got && !listed) return 'Donné';
+  return `Vendu ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (affiché ${fmtKr(listed)})` : ''}`;
+}
+
+// Pourquoi un meuble en vente n'est plus dans la boutique :
+// « réservé par Marie, rdv le 02/11 à 14:00 ».
+function heldNote(item, bookings) {
+  const held = bookings.filter((b) => String(b.item_id) === String(item.id) && isPending(b));
+  if (held.length > 1) return `réservé par ${held.map((b) => b.first_name).join(', ')}`;
+  const b = held[0];
+  if (!b) return null;
+  const d = String(b.day);
+  return `${b.quantity > 1 ? `${b.quantity} réservés` : 'réservé'} par ${b.first_name}, rdv le ${d.slice(8, 10)}/${d.slice(5, 7)} à ${b.slot}`;
+}
+
+function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPhotoCounts, pushToast }) {
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -2382,21 +2495,14 @@ function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, 
   const setSold = async (item, n, salePrice) => {
     const total = totalQty(item);
     const sold_qty = Math.max(0, Math.min(total, n));
-    const status = sold_qty >= total ? 'sold' : 'available';
-    // Sans migration-quantite.sql, seul le statut existe.
-    const patch = 'sold_qty' in item ? { status, sold_qty } : { status };
-    // Un exemplaire de plus : son prix s'ajoute ; un de moins : le dernier
-    // prix noté s'en va. Sans migration-prix-vente.sql, on ne peut vendre
-    // qu'au prix affiché.
     const listed = priceValue(item.price);
     const haggled = salePrice != null && salePrice !== listed;
-    if ('sale_prices' in item) {
-      const prices = salePrices(item);
-      patch.sale_prices = sold_qty > soldQty(item) ? [...prices, haggled ? salePrice : listed] : prices.slice(0, sold_qty);
-    } else if (haggled) {
+    const patch = soldPatch(item, sold_qty, haggled ? [salePrice] : []);
+    if (!patch) {
       pushToast('Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).');
       return false;
     }
+    const { status } = patch;
     const { error } = await sb.from('items').update(patch).eq('id', item.id);
     if (error) {
       pushToast('Mise à jour impossible.');
@@ -2687,6 +2793,7 @@ function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, 
                   <p className="text-xs text-slate-500 mt-1 truncate">
                     {[
                       soldQty(item) > 0 ? soldNote(item) : null,
+                      leftQty(item) > 0 ? heldNote(item, bookings) : null,
                       item.available_from && String(item.available_from).slice(0, 10) > todayKey()
                         ? `à partir du ${String(item.available_from).slice(8, 10)}/${String(item.available_from).slice(5, 7)}`
                         : null,
@@ -2742,15 +2849,74 @@ function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, 
   );
 }
 
-function BookingsPanel({ bookings, setBookings, pushToast }) {
+function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   const [filter, setFilter] = useState('all');
+  // Rendez-vous dont on note la vente (encadré « à quel prix ? »).
+  const [selling, setSelling] = useState(null);
 
   const update = async (id, status) => {
     const { error } = await sb.from('bookings').update({ status }).eq('id', id);
     if (error) return pushToast('Mise à jour impossible.');
     setBookings(bookings.map((b) => (b.id === id ? { ...b, status } : b)));
-    pushToast(status === 'confirmed' ? 'Rendez-vous confirmé.' : 'Rendez-vous refusé, le créneau est libéré.');
+    pushToast(status === 'confirmed' ? 'Rendez-vous confirmé.' : 'Rendez-vous refusé : le créneau et le meuble sont libérés.');
   };
+
+  const itemOf = (b) => items.find((i) => String(i.id) === String(b.item_id));
+  // Exemplaires que ce rendez-vous peut encore vendre : moins s'ils ont
+  // déjà été marqués vendus dans Annonces, pour ne pas les compter deux fois.
+  const sellable = (b, item) => (item ? Math.min(b.quantity || 1, leftQty(item)) : 0);
+
+  // Ce que le vendeur note après le rendez-vous (migration-reservation.sql).
+  const close = async (b, patch) => {
+    if (!('outcome' in b)) {
+      pushToast('Pour noter vendu ou invendu, lance d’abord migration-reservation.sql dans Supabase (SQL Editor).');
+      return false;
+    }
+    const { error } = await sb.from('bookings').update(patch).eq('id', b.id);
+    if (error) {
+      pushToast('Mise à jour impossible.');
+      return false;
+    }
+    setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, ...patch } : x)));
+    return true;
+  };
+
+  // Vendu : la vente compte dans Annonces et dans l'objectif, comme
+  // « Marquer vendu », et le meuble reste hors de la boutique. `total` en kr
+  // pour les `n` exemplaires partis.
+  const sold = async (b, item, n, total) => {
+    const patch = n > 0 ? soldPatch(item, soldQty(item) + n, Array(n).fill(total / n)) : null;
+    if (n > 0 && !patch) {
+      pushToast('Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).');
+      return false;
+    }
+    // Le rendez-vous d'abord : si sa colonne manque, rien n'a bougé.
+    if (!(await close(b, { outcome: 'sold', sale_price: total }))) return false;
+    if (patch) {
+      const { error } = await sb.from('items').update(patch).eq('id', item.id);
+      if (error) {
+        // Le rendez-vous redevient « à noter » pour pouvoir réessayer : sinon
+        // le meuble reviendrait en boutique sans être compté vendu.
+        await close(b, { outcome: null, sale_price: null });
+        pushToast('Mise à jour impossible.');
+        return false;
+      }
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
+    }
+    pushToast(total ? `Vente notée : ${fmtKr(total)}.` : 'Vente notée.');
+    return true;
+  };
+
+  // Invendu : le meuble réapparaît dans la boutique.
+  const unsold = async (b) => {
+    const item = itemOf(b);
+    const back = item && leftQty(item) > 0;
+    if (!window.confirm(back ? `Pas vendu ? « ${item.title} » réapparaît dans la boutique.` : 'Noter ce rendez-vous comme invendu ?')) return;
+    if (await close(b, { outcome: 'unsold' })) pushToast(back ? `« ${item.title} » est de nouveau en vente.` : 'Noté.');
+  };
+
+  const now = new Date();
+  const nowKey = `${todayKey()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
   const remove = async (id) => {
     if (!window.confirm('Supprimer ce rendez-vous ?')) return;
@@ -2802,6 +2968,9 @@ function BookingsPanel({ bookings, setBookings, pushToast }) {
         <ul className="space-y-3">
           {shown.map((b) => {
             const [label, cls] = labels[b.status] || labels.seen;
+            const item = itemOf(b);
+            const n = sellable(b, item);
+            const past = `${String(b.day).slice(0, 10)} ${b.slot}` <= nowKey;
             return (
               <li key={b.id} className={`border rounded-xl px-4 py-4 ${b.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2834,13 +3003,13 @@ function BookingsPanel({ bookings, setBookings, pushToast }) {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {b.status !== 'confirmed' && (
+                    {!b.outcome && b.status !== 'confirmed' && (
                       <button onClick={() => update(b.id, 'confirmed')}
                               className="inline-flex items-center gap-1.5 text-sm bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-3 py-1.5">
                         <Icon name="check" className="w-4 h-4" /> Confirmer
                       </button>
                     )}
-                    {b.status !== 'declined' && (
+                    {!b.outcome && b.status !== 'declined' && (
                       <button onClick={() => update(b.id, 'declined')}
                               className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-slate-400">
                         Refuser
@@ -2851,6 +3020,34 @@ function BookingsPanel({ bookings, setBookings, pushToast }) {
                     </button>
                   </div>
                 </div>
+
+                {b.outcome === 'sold' ? (
+                  <p className="mt-3 pt-3 border-t border-slate-200 text-sm font-semibold text-green-700 flex items-center gap-1.5">
+                    <Icon name="check" className="w-4 h-4" /> {saleNote(b, item)}
+                  </p>
+                ) : b.outcome === 'unsold' ? (
+                  <p className="mt-3 pt-3 border-t border-slate-200 text-sm text-slate-500">Invendu · remis en vente</p>
+                ) : b.status !== 'declined' && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
+                    <span className={`mr-auto text-sm ${past ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>
+                      {past ? 'Rendez-vous passé : vendu ou invendu ?'
+                        : 'outcome' in b ? 'Retiré de la boutique en attendant.' : 'Après le rendez-vous :'}
+                    </span>
+                    <button onClick={() => (n > 0 ? setSelling(selling === b.id ? null : b.id) : sold(b, item, 0, null))}
+                            aria-expanded={selling === b.id}
+                            className="inline-flex items-center gap-1.5 text-sm font-semibold border border-green-600 text-green-700 rounded-lg px-3 py-1.5 hover:bg-green-50">
+                      <Icon name="check" className="w-4 h-4" /> Vendu
+                    </button>
+                    <button onClick={() => unsold(b)}
+                            className="inline-flex items-center gap-1.5 text-sm border border-slate-200 text-slate-600 rounded-lg px-3 py-1.5 hover:border-slate-400">
+                      <Icon name="x" className="w-4 h-4" /> Invendu
+                    </button>
+                  </div>
+                )}
+                {selling === b.id && !b.outcome && n > 0 && (
+                  <SalePrompt item={item} count={n} onConfirm={(total) => sold(b, item, n, total)}
+                              onCancel={() => setSelling(null)} />
+                )}
               </li>
             );
           })}
