@@ -14,6 +14,8 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `migration-paiement.sql` | Supabase, SQL Editor | si la base existait avant le choix du paiement, **ou pour accepter Cash** (sans risque à relancer) |
 | `migration-quantite.sql` | Supabase, SQL Editor | une fois, **pour vendre plusieurs exemplaires d'un meuble** (2 lits…) (sans risque à relancer) |
 | `migration-photos.sql` | Supabase, SQL Editor | une fois, **pour mettre plusieurs photos par meuble** et retrouver les choix de la description en rouvrant une annonce (sans risque à relancer) |
+| `migration-stats.sql` | Supabase, SQL Editor | une fois, **pour l'onglet Stats** (visites, scans du QR code, meubles les plus vus). **Si tu l'avais déjà lancé, relance-le** : la nouvelle version permet d'effacer ta propre visite quand tu te connectes (sans risque à relancer) |
+| `migration-prix-vente.sql` | Supabase, SQL Editor | une fois, **pour noter le prix de vente réel** quand tu as négocié (sans risque à relancer) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
@@ -82,7 +84,7 @@ adresse (`https://TON-PSEUDO.github.io/meubles/`) puis **Save**. Sans ça, le li
 
 Ouvre le site, clique sur **Seller access** en bas de page (ou va directement sur
 `https://TON-PSEUDO.github.io/meubles/#vendeur`, à mettre en favori sur ton téléphone),
-connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
+connecte-toi avec l'e-mail de l'étape 3. Cinq onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
   **Photos** : jusqu'à 8 par meuble, on peut en choisir plusieurs d'un coup. La
@@ -102,6 +104,12 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
   choisissent combien ils en prennent en réservant. Quand un exemplaire part, clique
   sur **+** de « 0 vendu sur 2 » ; quand tout est vendu, l'annonce quitte la boutique.
   Il faut avoir lancé `migration-quantite.sql` une fois.
+  **Vendu** : « Marquer vendu » (ou **+**) demande à quel prix : au prix affiché, ou
+  à un autre prix si tu as négocié. La liste montre « vendu 400 kr (affiché 450 kr) »
+  et l'objectif compte ce que tu as vraiment encaissé, avec l'écart dû aux
+  négociations. **−** ou « Remettre en vente » annule la dernière vente. Pour noter un
+  autre prix, il faut avoir lancé `migration-prix-vente.sql` une fois ; sans lui, on
+  ne peut vendre qu'au prix affiché.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
@@ -120,6 +128,18 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
   l'imprimante est réglée sur le papier américain **Letter**, l'affiche sort quand même
   entière et centrée, mais un peu plus petite : choisis **A4** dans « Plus de
   paramètres › Taille du papier » pour qu'elle remplisse la feuille.
+- **Stats** — visites du site, scans du QR code, d'où viennent les visiteurs, et pour
+  chaque meuble : combien l'ont vu, combien se sont intéressés (photos ouvertes ou
+  réservation commencée) et combien de rendez-vous. Il faut avoir lancé
+  `migration-stats.sql` une fois ; le compteur démarre à ce moment-là. L'adresse du
+  site ne change pas : l'affiche déjà imprimée et son QR code restent bons.
+  Le **scan du QR code est une estimation** : le QR code mène à l'adresse simple du
+  site, donc toute arrivée sur téléphone sans lien d'origine compte comme un scan
+  (taper l'adresse à la main aussi). Pas de cookie ni d'outil extérieur : un numéro
+  tiré au hasard par visite, oublié à la fermeture de l'onglet. Tes visites ne
+  comptent pas : si tu arrives sur la boutique puis te connectes à l'espace vendeur,
+  ta visite est effacée, et ce téléphone ou cet ordinateur n'est plus jamais compté,
+  même déconnecté. Les essais en local (localhost) ne comptent pas non plus.
 
 ---
 

@@ -235,6 +235,17 @@ const soldQty = (item) =>
   item.status === 'sold' ? totalQty(item) : Math.min(totalQty(item), parseInt(item.sold_qty, 10) || 0);
 const leftQty = (item) => totalQty(item) - soldQty(item);
 
+// Prix réellement obtenus, un par exemplaire vendu, dans l'ordre des ventes
+// (colonne sale_prices, migration-prix-vente.sql).
+const salePrices = (item) =>
+  (Array.isArray(item.sale_prices) ? item.sale_prices : []).slice(0, soldQty(item)).map(Number);
+// Ce que le meuble a rapporté : les prix notés, et le prix affiché pour les
+// exemplaires vendus sans prix noté (avant la mise à jour).
+const soldAmount = (item) => {
+  const noted = salePrices(item);
+  return noted.reduce((a, b) => a + b, 0) + (soldQty(item) - noted.length) * priceValue(item.price);
+};
+
 // Prix pour `count` exemplaires : « 900 kr », ou le prix tel quel s'il
 // n'y a pas de nombre dedans (gratuit…).
 const priceFor = (raw, count) =>
@@ -333,6 +344,67 @@ async function fetchExtraPhotos(itemId, fresh) {
   const photos = data && Array.isArray(data.photos) ? data.photos : [];
   extraPhotoCache.set(itemId, photos);
   return photos;
+}
+
+/* ---------------------------- statistiques -------------------------- */
+// Compteur maison, sans cookie ni outil extérieur : la boutique ajoute une
+// ligne dans la table visits (migration-stats.sql) pour chaque visite et
+// chaque meuble regardé, une seule fois par session (onglet ouvert). Le
+// vendeur et les essais en local ne comptent pas.
+const STATS_KEY = 'meubles-stats';
+// Posé sur un appareil où le vendeur s'est connecté une fois : ses
+// visites de la boutique ne comptent plus, même déconnecté.
+const SELLER_DEVICE_KEY = 'meubles-appareil-vendeur';
+let tracker = null; // { session, sent } quand on compte, null sinon
+
+function saveTracker() {
+  try { sessionStorage.setItem(STATS_KEY, JSON.stringify(tracker)); } catch { /* navigation privée */ }
+}
+
+function track(kind, itemId, extra) {
+  if (!tracker) return;
+  const key = `${kind} ${itemId || ''}`;
+  if (tracker.sent.includes(key)) return;
+  tracker.sent.push(key);
+  saveTracker();
+  sb.from('visits')
+    .insert({ kind, session: tracker.session, item_id: itemId || null, ...extra })
+    // Table absente (migration-stats.sql pas lancé) : on arrête de compter.
+    .then(({ error }) => { if (error) tracker = null; });
+}
+
+// Une visite. Le QR code de l'affiche mène à l'adresse nue du site : une
+// arrivée sur téléphone, sans site d'origine et sans rien après l'adresse,
+// compte comme un scan. C'est une estimation : taper l'adresse à la main
+// sur son téléphone compte aussi.
+function startStats() {
+  if (!sb || location.protocol === 'file:' || /^(localhost|127\.|192\.168\.)/.test(location.hostname)) return;
+  try { if (localStorage.getItem(SELLER_DEVICE_KEY)) return; } catch { /* navigation privée */ }
+  try { tracker = JSON.parse(sessionStorage.getItem(STATS_KEY)); } catch { tracker = null; }
+  if (!tracker) {
+    const session = window.crypto && crypto.randomUUID ? crypto.randomUUID()
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    tracker = { session, sent: [] };
+  }
+  let source = null;
+  try { source = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : null; } catch { /* lien illisible */ }
+  if (source === location.hostname) source = null;
+  const mobile = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  track('visit', null, { source, mobile, qr: !source && mobile && !location.search && !location.hash });
+}
+
+// Le vendeur vient de se connecter : on arrête de compter, on efface ce
+// qui est déjà parti pour cette session (visite, meubles regardés) et on
+// note l'appareil pour ne plus jamais le compter.
+function forgetSellerVisit() {
+  try { localStorage.setItem(SELLER_DEVICE_KEY, '1'); } catch { /* navigation privée */ }
+  let session = tracker && tracker.session;
+  if (!session) {
+    try { session = (JSON.parse(sessionStorage.getItem(STATS_KEY)) || {}).session; } catch { /* rien */ }
+  }
+  tracker = null;
+  try { sessionStorage.removeItem(STATS_KEY); } catch { /* navigation privée */ }
+  if (session) sb.from('visits').delete().eq('session', session).then(() => {});
 }
 
 /* ------------------------------ icônes ----------------------------- */
@@ -497,11 +569,17 @@ function App() {
         setRecovering(false);
         setLinkProblem(true);
       }
+      // Le vendeur connecté, ou arrivé par #vendeur, ne compte pas dans les stats.
+      if (!data.session && !START_IN_ADMIN) startStats();
       setAuthReady(true);
     });
     const { data } = sb.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (s) setLinkProblem(false);
+      if (s) {
+        setLinkProblem(false);
+        // Hors du rappel : Supabase bloque les requêtes lancées pendant celui-ci.
+        setTimeout(forgetSellerVisit, 0);
+      }
       if (event === 'PASSWORD_RECOVERY') {
         setRecovering(true);
         setRoute('admin');
@@ -756,8 +834,8 @@ function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, 
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {available.map((item) => (
               <ItemCard key={item.id} item={item} photoTotal={photoTotal(item)}
-                        onBook={() => setBooking(item)}
-                        onPhoto={() => setPhoto(item)} />
+                        onBook={() => { track('item_book', item.id); setBooking(item); }}
+                        onPhoto={() => { track('item_photos', item.id); setPhoto(item); }} />
             ))}
           </ul>
         )}
@@ -789,7 +867,7 @@ function Shop({ items, photoCounts, settings, busy, ready, loadFailed, onRetry, 
           item={photo}
           total={photoTotal(photo)}
           onClose={() => setPhoto(null)}
-          onBook={() => { setPhoto(null); setBooking(photo); }}
+          onBook={() => { track('item_book', photo.id); setPhoto(null); setBooking(photo); }}
         />
       )}
     </div>
@@ -812,8 +890,23 @@ function ItemCard({ item, photoTotal, onBook, onPhoto }) {
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(check);
   }, [item.description, expanded]);
 
+  // Stats : la fiche compte comme vue quand elle reste au moins une seconde
+  // à moitié à l'écran.
+  const cardRef = useRef(null);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    let timer;
+    const io = new IntersectionObserver(([entry]) => {
+      clearTimeout(timer);
+      if (entry.isIntersecting) timer = setTimeout(() => { track('item_seen', item.id); io.disconnect(); }, 1000);
+    }, { threshold: 0.5 });
+    io.observe(el);
+    return () => { clearTimeout(timer); io.disconnect(); };
+  }, [item.id]);
+
   return (
-    <li className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+    <li ref={cardRef} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
       <div className="relative aspect-[4/3] bg-blue-50">
         {item.image ? (
           <button onClick={onPhoto} className="block w-full h-full"
@@ -1356,7 +1449,8 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
           {[['annonces', 'Annonces', items.filter((i) => i.status !== 'sold').length],
             ['rdv', 'Rendez-vous', newCount],
             ['planning', 'Planning', 0],
-            ['affiche', 'Affiche', 0]].map(([id, label, count]) => (
+            ['affiche', 'Affiche', 0],
+            ['stats', 'Stats', 0]].map(([id, label, count]) => (
             <button key={id} onClick={() => setTab(id)}
                     className={`px-2 sm:px-4 py-3 text-sm font-semibold border-b-2 -mb-px inline-flex items-center gap-1.5 sm:gap-2 whitespace-nowrap ${
                       tab === id ? 'border-blue-700 text-blue-800'
@@ -1379,6 +1473,7 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
         {tab === 'rdv' && <BookingsPanel bookings={bookings} setBookings={setBookings} pushToast={pushToast} />}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
         {tab === 'affiche' && <PosterPanel items={items} settings={settings} />}
+        {tab === 'stats' && <StatsPanel items={items} bookings={bookings} />}
       </main>
     </div>
   );
@@ -1941,12 +2036,15 @@ const emptyForm = {
 
 function GoalProgress({ items }) {
   // Compté par exemplaire : 2 lits à 450 kr, c'est 900 kr et 2 meubles.
+  // Le vendu compte ce qui a été vraiment encaissé (prix négociés compris).
   const sum = (qty) => items.reduce((total, i) => total + priceValue(i.price) * qty(i), 0);
   const units = (qty) => items.reduce((total, i) => total + qty(i), 0);
   const soldCount = units(soldQty);
   const listedCount = units(leftQty);
-  const soldTotal = sum(soldQty);
+  const soldTotal = items.reduce((total, i) => total + soldAmount(i), 0);
   const listedTotal = sum(leftQty);
+  // Écart avec les prix affichés des meubles vendus : négatif = remises.
+  const haggled = soldTotal - sum(soldQty);
   const missing = Math.max(0, SALES_GOAL - soldTotal);
   const pct = (n) => Math.min(100, (n / SALES_GOAL) * 100);
   const reached = soldTotal >= SALES_GOAL;
@@ -1978,7 +2076,9 @@ function GoalProgress({ items }) {
 
       <div className="space-y-5">
         {bar('Vendu', soldCount, soldTotal, 'bg-blue-700', 'bg-blue-100',
-          `${Math.round(pct(soldTotal))} % de l’objectif`)}
+          `${Math.round(pct(soldTotal))} % de l’objectif${Math.round(haggled)
+            ? ` · ${haggled < 0 ? '−' : '+'}${fmtKr(Math.abs(haggled))} par rapport aux prix affichés (négociations)`
+            : ''}`)}
         {bar('En vente', listedCount, listedTotal, 'bg-blue-400', 'bg-blue-100',
           listedTotal + soldTotal >= SALES_GOAL
             ? `Tout vendre rapporterait ${fmtKr(soldTotal + listedTotal)}, l’objectif est atteignable.`
@@ -2066,10 +2166,78 @@ function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
   );
 }
 
+// Au moment de marquer un meuble (ou un exemplaire) vendu : au prix
+// affiché, ou au prix obtenu après négociation. `onConfirm` reçoit le prix
+// en kr et renvoie true si la vente est enregistrée.
+function SalePrompt({ item, onConfirm, onCancel }) {
+  const listed = priceValue(item.price);
+  const canHaggle = 'sale_prices' in item;
+  const [other, setOther] = useState(false);
+  const [price, setPrice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const valid = !other || /\d/.test(price);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    const done = await onConfirm(other ? priceValue(price) : listed);
+    setBusy(false);
+    if (done) onCancel();
+  };
+
+  return (
+    <form onSubmit={submit} className="mt-3 border border-blue-200 bg-blue-50 rounded-xl px-4 py-3 text-sm">
+      <p className="font-semibold">{totalQty(item) > 1 ? 'Cet exemplaire est vendu à quel prix ?' : 'Vendu à quel prix ?'}</p>
+      <label className="mt-2 flex items-center gap-2 cursor-pointer">
+        <input type="radio" checked={!other} onChange={() => setOther(false)} className="w-4 h-4 accent-blue-700" />
+        Au prix affiché : <strong>{withKr(item.price) || 'gratuit'}</strong>
+      </label>
+      <div className={`mt-2 flex flex-wrap items-center gap-2 ${canHaggle ? '' : 'text-slate-400'}`}>
+        <label className={`flex items-center gap-2 ${canHaggle ? 'cursor-pointer' : ''}`}>
+          <input type="radio" checked={other} disabled={!canHaggle} onChange={() => setOther(true)}
+                 className="w-4 h-4 accent-blue-700" />
+          À un autre prix (négocié)
+        </label>
+        <span className="flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+          <input value={price} disabled={!canHaggle} onFocus={() => setOther(true)}
+                 onChange={(e) => { setPrice(e.target.value); setOther(true); }}
+                 inputMode="decimal" placeholder={listed ? String(listed) : '0'} aria-label="Prix de vente négocié"
+                 className="w-20 rounded-lg px-2 py-1.5 bg-transparent outline-none" />
+          <span className="pr-2 text-slate-500">kr</span>
+        </span>
+      </div>
+      {!canHaggle && (
+        <p className="mt-1 text-xs text-slate-500">
+          Pour noter un autre prix, lance d’abord <code className="bg-white px-1 rounded">migration-prix-vente.sql</code> dans Supabase.
+        </p>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button type="submit" disabled={busy || !valid}
+                className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-4 py-2">
+          {busy ? 'Enregistrement…' : 'Confirmer la vente'}
+        </button>
+        <button type="button" onClick={onCancel} className="text-slate-600 hover:text-slate-900 px-3">Annuler</button>
+      </div>
+    </form>
+  );
+}
+
+// Ligne de la liste vendeur : « vendu 400 kr (affiché 450 kr) », « 2 vendus 900 kr ».
+function soldNote(item) {
+  const n = soldQty(item);
+  const got = soldAmount(item);
+  const listed = priceValue(item.price) * n;
+  if (!got && !listed) return n > 1 ? `${n} donnés` : 'donné';
+  return `${n > 1 ? `${n} vendus` : 'vendu'} ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (affiché ${fmtKr(listed)})` : ''}`;
+}
+
 function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, pushToast }) {
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Meuble dont on est en train de noter la vente (encadré « à quel prix ? »).
+  const [selling, setSelling] = useState(null);
   // Choix qui servent à écrire la description (type, couleur, défauts…).
   const [details, setDetails] = useState(emptyDetails);
   // Texte remplacé par « Reformuler », pour pouvoir revenir en arrière.
@@ -2208,19 +2376,39 @@ function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, 
     pushToast('Annonce supprimée.');
   };
 
-  // Combien d'exemplaires sont partis. Tout vendu : l'annonce quitte la boutique.
-  const setSold = async (item, n) => {
+  // Combien d'exemplaires sont partis, et à quel prix (`salePrice`, en kr)
+  // pour celui qui vient de partir. Tout vendu : l'annonce quitte la
+  // boutique. Renvoie true si c'est enregistré.
+  const setSold = async (item, n, salePrice) => {
     const total = totalQty(item);
     const sold_qty = Math.max(0, Math.min(total, n));
     const status = sold_qty >= total ? 'sold' : 'available';
     // Sans migration-quantite.sql, seul le statut existe.
     const patch = 'sold_qty' in item ? { status, sold_qty } : { status };
+    // Un exemplaire de plus : son prix s'ajoute ; un de moins : le dernier
+    // prix noté s'en va. Sans migration-prix-vente.sql, on ne peut vendre
+    // qu'au prix affiché.
+    const listed = priceValue(item.price);
+    const haggled = salePrice != null && salePrice !== listed;
+    if ('sale_prices' in item) {
+      const prices = salePrices(item);
+      patch.sale_prices = sold_qty > soldQty(item) ? [...prices, haggled ? salePrice : listed] : prices.slice(0, sold_qty);
+    } else if (haggled) {
+      pushToast('Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).');
+      return false;
+    }
     const { error } = await sb.from('items').update(patch).eq('id', item.id);
-    if (error) return pushToast('Mise à jour impossible.');
+    if (error) {
+      pushToast('Mise à jour impossible.');
+      return false;
+    }
     setItems(items.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
-    if (status === 'sold') pushToast('Marquée comme vendue : retirée de la boutique.');
+    const at = haggled ? ` à ${fmtKr(salePrice)} (affiché ${fmtKr(listed)})` : '';
+    if (status === 'sold') pushToast(`Vendu${at} : retiré de la boutique.`);
+    else if (sold_qty > soldQty(item)) pushToast(`Vendu${at}. Il en reste ${total - sold_qty} sur ${total} dans la boutique.`);
     else if (total > 1) pushToast(`Il en reste ${total - sold_qty} sur ${total} dans la boutique.`);
     else pushToast('Remise en vente.');
+    return true;
   };
 
   const kind = KINDS.find((k) => k.en === details.kind);
@@ -2484,56 +2672,68 @@ function ItemsPanel({ items, setItems, manyPhotos, photoCounts, setPhotoCounts, 
       ) : (
         <ul className="divide-y divide-slate-100 border-t border-slate-100">
           {items.map((item) => (
-            <li key={item.id} className="py-4 flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2">
-              <div className="w-20 h-16 rounded-lg bg-blue-50 border border-blue-100 overflow-hidden shrink-0 flex items-center justify-center">
-                {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
-                            : <Icon name="image" className="w-5 h-5 text-blue-200" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
-                  <span className="text-blue-700 text-sm">{withKr(item.price)}</span>
-                  {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">Vendu</span>}
+            <li key={item.id} className="py-4">
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2">
+                <div className="w-20 h-16 rounded-lg bg-blue-50 border border-blue-100 overflow-hidden shrink-0 flex items-center justify-center">
+                  {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                              : <Icon name="image" className="w-5 h-5 text-blue-200" />}
                 </div>
-                <p className="text-xs text-slate-500 mt-1 truncate">
-                  {[
-                    item.available_from && String(item.available_from).slice(0, 10) > todayKey()
-                      ? `à partir du ${String(item.available_from).slice(8, 10)}/${String(item.available_from).slice(5, 7)}`
-                      : null,
-                    item.available_to ? `jusqu’au ${String(item.available_to).slice(8, 10)}/${String(item.available_to).slice(5, 7)}` : null,
-                    item.custom_schedule ? 'horaires propres' : null,
-                    photoCounts[item.id] ? `${photoCounts[item.id] + 1} photos` : null,
-                    Array.isArray(item.links) && item.links.length ? item.links.map((l) => l.label).join(', ') : null,
-                  ].filter(Boolean).join(' · ')}
-                </p>
-              </div>
-              {/* sur téléphone, les boutons passent sous la ligne */}
-              <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
-                {totalQty(item) > 1 ? (
-                  <span className="inline-flex items-center border border-slate-200 rounded-lg text-xs">
-                    <button onClick={() => setSold(item, soldQty(item) - 1)} disabled={soldQty(item) === 0}
-                            className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
-                            aria-label="Un vendu de moins">−</button>
-                    <span className="px-1 tabular-nums">{soldQty(item)} vendu{soldQty(item) > 1 ? 's' : ''} sur {totalQty(item)}</span>
-                    <button onClick={() => setSold(item, soldQty(item) + 1)} disabled={leftQty(item) === 0}
-                            className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
-                            aria-label="Un vendu de plus">+</button>
-                  </span>
-                ) : (
-                  <button onClick={() => setSold(item, item.status === 'sold' ? 0 : 1)}
-                          className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
-                    {item.status === 'sold' ? 'Remettre en vente' : 'Vendu ailleurs'}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
+                    <span className="text-blue-700 text-sm">{withKr(item.price)}</span>
+                    {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">Vendu</span>}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 truncate">
+                    {[
+                      soldQty(item) > 0 ? soldNote(item) : null,
+                      item.available_from && String(item.available_from).slice(0, 10) > todayKey()
+                        ? `à partir du ${String(item.available_from).slice(8, 10)}/${String(item.available_from).slice(5, 7)}`
+                        : null,
+                      item.available_to ? `jusqu’au ${String(item.available_to).slice(8, 10)}/${String(item.available_to).slice(5, 7)}` : null,
+                      item.custom_schedule ? 'horaires propres' : null,
+                      photoCounts[item.id] ? `${photoCounts[item.id] + 1} photos` : null,
+                      Array.isArray(item.links) && item.links.length ? item.links.map((l) => l.label).join(', ') : null,
+                    ].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                {/* sur téléphone, les boutons passent sous la ligne */}
+                <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
+                  {totalQty(item) > 1 ? (
+                    <span className="inline-flex items-center border border-slate-200 rounded-lg text-xs">
+                      <button onClick={() => setSold(item, soldQty(item) - 1)} disabled={soldQty(item) === 0}
+                              className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
+                              aria-label="Un vendu de moins">−</button>
+                      <span className="px-1 tabular-nums">{soldQty(item)} vendu{soldQty(item) > 1 ? 's' : ''} sur {totalQty(item)}</span>
+                      <button onClick={() => setSelling(selling === item.id ? null : item.id)} disabled={leftQty(item) === 0}
+                              className="px-2.5 py-1.5 text-base leading-none text-slate-600 hover:text-blue-700 disabled:text-slate-300"
+                              aria-label="Un vendu de plus">+</button>
+                    </span>
+                  ) : item.status === 'sold' ? (
+                    <button onClick={() => setSold(item, 0)}
+                            className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
+                      Remettre en vente
+                    </button>
+                  ) : (
+                    <button onClick={() => setSelling(selling === item.id ? null : item.id)} aria-expanded={selling === item.id}
+                            className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
+                      Marquer vendu
+                    </button>
+                  )}
+                  <button onClick={() => openForm(item)}
+                          className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
+                    <Icon name="pencil" className="w-4 h-4" />
                   </button>
-                )}
-                <button onClick={() => openForm(item)}
-                        className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label="Modifier">
-                  <Icon name="pencil" className="w-4 h-4" />
-                </button>
-                <button onClick={() => remove(item)}
-                        className="p-2 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
-                  <Icon name="trash" className="w-4 h-4" />
-                </button>
+                  <button onClick={() => remove(item)}
+                          className="p-2 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
+                    <Icon name="trash" className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
+              {selling === item.id && leftQty(item) > 0 && (
+                <SalePrompt item={item} onConfirm={(price) => setSold(item, soldQty(item) + 1, price)}
+                            onCancel={() => setSelling(null)} />
+              )}
             </li>
           ))}
         </ul>
@@ -2799,6 +2999,178 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------------------- statistiques -------------------------- */
+// Totaux calculés dans la base par seller_stats() (migration-stats.sql) :
+// visites, scans estimés du QR code, d'où viennent les visiteurs, et pour
+// chaque meuble combien l'ont vu et combien s'y sont intéressés.
+
+const SOURCE_LABELS = {
+  qr: 'QR code (estimé)',
+  phone: 'Téléphone, lien direct ou partagé',
+  computer: 'Ordinateur, lien direct',
+};
+
+function StatTile({ label, value, note, small }) {
+  return (
+    <div className="border border-slate-200 rounded-xl bg-white px-4 py-4 min-w-0">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className={`mt-1 font-semibold text-slate-900 ${small ? 'text-lg leading-snug truncate' : 'text-3xl'}`}
+         title={small ? value : undefined}>
+        {value}
+      </p>
+      {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
+    </div>
+  );
+}
+
+function StatsPanel({ items, bookings }) {
+  const [stats, setStats] = useState(null);
+  // 'missing' : migration-stats.sql pas lancé, 'failed' : base injoignable
+  const [problem, setProblem] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await sb.rpc('seller_stats');
+    setLoading(false);
+    if (error) return setProblem(error.code === 'PGRST202' || /seller_stats/.test(error.message || '') ? 'missing' : 'failed');
+    setProblem(null);
+    setStats(data);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (problem === 'missing') {
+    return (
+      <div className="border border-dashed border-blue-200 rounded-xl px-6 py-10 text-center text-slate-600 max-w-xl mx-auto">
+        <h2 className="display font-bold text-lg text-slate-900">Les statistiques ne sont pas encore activées</h2>
+        <p className="mt-2 leading-relaxed">
+          Lance <code className="bg-blue-50 px-1 rounded">migration-stats.sql</code> une fois dans Supabase
+          (SQL Editor → Run). Le compteur démarre à ce moment-là.
+        </p>
+        <button onClick={load} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline">
+          <Icon name="refresh" className="w-4 h-4" /> Réessayer
+        </button>
+      </div>
+    );
+  }
+  if (!stats) {
+    return (
+      <p className="text-slate-500">
+        {problem === 'failed' ? 'Chargement impossible. Vérifie la connexion et actualise.' : 'Chargement…'}
+      </p>
+    );
+  }
+
+  // Chaque meuble avec ses chiffres ; ceux que personne n'a vus restent en
+  // bas de la liste (les vendus seulement s'ils ont été vus).
+  const counts = new Map(stats.items.map((r) => [String(r.item_id), r]));
+  const rdv = (id) => bookings.filter((b) => String(b.item_id) === String(id) && b.status !== 'declined').length;
+  const rows = items
+    .map((item) => {
+      const c = counts.get(String(item.id)) || { seen: 0, interested: 0 };
+      return { item, seen: c.seen, interested: c.interested, rdv: rdv(item.id) };
+    })
+    .filter((r) => r.item.status !== 'sold' || r.seen || r.interested)
+    .sort((a, b) => b.seen - a.seen || b.interested - a.interested || b.rdv - a.rdv);
+  const maxSeen = Math.max(1, ...rows.map((r) => r.seen));
+  const top = rows[0] && (rows[0].seen || rows[0].interested) ? rows[0] : null;
+
+  // facebook.com, l.facebook.com, m.facebook.com… ne font qu'une source.
+  const sources = [];
+  stats.sources.forEach(({ source, n }) => {
+    const name = SOURCE_LABELS[source] || source.replace(/^(l|lm|m|mobile|web)\./, '');
+    const same = sources.find((s) => s.name === name);
+    if (same) same.n += n;
+    else sources.push({ name, n });
+  });
+  sources.sort((a, b) => b.n - a.n);
+
+  const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          {stats.since
+            ? `Compté depuis le ${new Date(stats.since).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}. Tes visites avec ton compte connecté ne comptent pas.`
+            : 'Aucune visite comptée pour l’instant : le compteur démarre avec la prochaine visite de la boutique.'}
+        </p>
+        <button onClick={load} disabled={loading}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline disabled:text-slate-400">
+          <Icon name="refresh" className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Actualiser
+        </button>
+      </div>
+
+      <div className="grid sm:grid-cols-3 gap-3">
+        <StatTile label="Visites du site" value={stats.visits.toLocaleString('fr-FR')}
+                  note={`+${stats.visits_today} aujourd’hui`} />
+        <StatTile label="Scans du QR code" value={stats.qr.toLocaleString('fr-FR')}
+                  note={`+${stats.qr_today} aujourd’hui · estimation`} />
+        <StatTile label="Meuble le plus regardé" small value={top ? top.item.title : '—'}
+                  note={top ? `${plural(top.seen, 'vue')} · ${plural(top.interested, 'intéressé')}` : 'Pas encore de vue'} />
+      </div>
+
+      {sources.length > 0 && (
+        <section>
+          <h2 className="display font-bold text-lg">D’où viennent les visites</h2>
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {sources.map((s) => (
+              <li key={s.name} className="inline-flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
+                {s.name} <span className="font-semibold tabular-nums">{s.n}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+            Le QR code mène à l’adresse simple du site : une arrivée sur téléphone sans lien
+            d’origine est comptée comme un scan. Taper l’adresse à la main compte aussi.
+          </p>
+        </section>
+      )}
+
+      <section>
+        <h2 className="display font-bold text-lg">Meubles les plus regardés</h2>
+        <p className="text-sm text-slate-500 mt-0.5">
+          <strong className="font-semibold text-slate-700">Vues</strong> : la fiche est restée une seconde à l’écran.{' '}
+          <strong className="font-semibold text-slate-700">Intéressés</strong> : visiteurs qui ont ouvert les photos ou
+          commencé une réservation. <strong className="font-semibold text-slate-700">RDV</strong> : rendez-vous pris
+          (hors refusés). Les meubles en haut de la boutique sont forcément plus vus : « Intéressés » dit
+          mieux lesquels donnent envie.
+        </p>
+        <table className="mt-3 w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
+              <th className="py-2 pr-3 font-medium">Meuble</th>
+              <th className="py-2 px-2 font-medium text-right">Vues</th>
+              <th className="py-2 px-2 font-medium text-right">Intéressés</th>
+              <th className="py-2 pl-2 font-medium text-right">RDV</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map(({ item, seen, interested, rdv: n }) => (
+              <tr key={item.id}>
+                <td className="py-2.5 pr-3 max-w-0 w-full">
+                  <span className={`block truncate ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
+                </td>
+                <td className="py-2.5 px-2">
+                  <span className="flex items-center justify-end gap-2">
+                    {/* longueur proportionnelle aux vues du meuble le plus vu */}
+                    <span className="hidden sm:block w-24 h-1.5 rounded-full bg-blue-100 overflow-hidden" aria-hidden="true">
+                      <span className="block h-full rounded-full bg-blue-700" style={{ width: `${(seen / maxSeen) * 100}%` }} />
+                    </span>
+                    <span className="w-8 text-right tabular-nums font-semibold">{seen}</span>
+                  </span>
+                </td>
+                <td className="py-2.5 px-2 text-right tabular-nums">{interested}</td>
+                <td className="py-2.5 pl-2 text-right tabular-nums">{n}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }
