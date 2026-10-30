@@ -106,13 +106,20 @@ connecte-toi avec l'e-mail de l'étape 3. Quatre onglets :
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
   autres sont cités dessous, sous « Also for sale ». Si tout ne tient pas au-dessus
-  du bandeau bleu, le haut de l'affiche rapetisse tout seul (60 % au plus petit,
-  sinon un message prévient). Clique sur un texte pour le modifier, choisis les paiements affichés en bas (Revolut et Cash au
-  départ, on en retire ou on en ajoute), choisis le **format** : **1 par feuille**
-  (une affiche A4) ou **2 par feuille** (deux affiches A5 identiques sur un A4 en
-  paysage, à couper le long des pointillés), puis **Imprimer / Enregistrer en PDF**
-  (A4, en paysage pour 2 par feuille, marges « Aucune », graphiques d'arrière-plan
-  cochés). Les choix sont gardés dans ce navigateur.
+  du bandeau bleu, le haut de l'affiche rapetisse tout seul (60 % au plus petit) et
+  un avertissement orange dit que la liste cochée est trop longue : décoche quelques
+  meubles. Clique sur un texte pour le modifier, choisis les paiements affichés en bas
+  (Revolut et Cash au départ, on en retire ou on en ajoute), choisis le **format** :
+  **1 par feuille** (une affiche A4) ou **2 par feuille** (deux affiches A5 identiques
+  sur un A4 en paysage, à couper le long des pointillés), puis **Imprimer / Enregistrer
+  en PDF** (papier A4, en paysage pour 2 par feuille, graphiques d'arrière-plan cochés).
+  Les choix sont gardés dans ce navigateur.
+
+  **Impression.** L'affiche a sa propre marge blanche de 6 mm, car les imprimantes ne
+  savent pas imprimer jusqu'au bord : l'aperçu à l'écran est ce qui sort. Si
+  l'imprimante est réglée sur le papier américain **Letter**, l'affiche sort quand même
+  entière et centrée, mais un peu plus petite : choisis **A4** dans « Plus de
+  paramètres › Taille du papier » pour qu'elle remplisse la feuille.
 
 ---
 

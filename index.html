@@ -51,18 +51,26 @@
   /* ---------- affiche A4 (onglet Affiche de l'espace vendeur) ---------- */
   .pst-frame { background: #fff; overflow: hidden; box-shadow: 0 10px 40px rgba(22,48,122,.16); }
   /* La feuille imprimée : une affiche A4, ou deux affiches A5 côte à côte
-     sur un A4 en paysage (l'affiche réduite à 1/√2 fait pile un A5). */
-  .pst-page { position: relative; width: 210mm; height: 297mm; background: #fff; transform-origin: top left; }
-  .pst-page.is-two { width: 297mm; height: 210mm; display: flex; }
-  .pst-half { flex: none; width: 148.5mm; height: 210mm; overflow: hidden; }
-  .pst-half .pst-sheet { transform: scale(.70711); }
-  .pst-cut { position: absolute; top: 0; bottom: 0; left: 148.5mm; border-left: .3mm dashed #9fb3d9; }
+     sur un A4 en paysage. Chaque affiche (une « case ») garde 6 mm de blanc
+     tout autour : les imprimantes ne savent pas imprimer jusqu'au bord de
+     la feuille, et en 2 par feuille chaque A5 découpé a aussi sa marge. */
+  .pst-page { position: relative; display: flex; width: 210mm; height: 297mm; background: #fff; transform-origin: top left; }
+  .pst-page.is-two { width: 297mm; height: 210mm; }
+  .pst-slot {
+    flex: none; width: 100%; height: 100%; padding: 6mm; box-sizing: border-box; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pst-page.is-two .pst-slot { width: 50%; }
+  .pst-cut { position: absolute; top: 0; bottom: 0; left: 50%; border-left: .3mm dashed #9fb3d9; }
+  /* L'affiche est dessinée en 210 × 297 mm puis réduite pour tenir dans sa
+     case : (210 − 12) / 210 sur un A4, (148,5 − 12) / 210 sur un A5. */
   .pst-sheet {
-    width: 210mm; height: 297mm; background: #fff; color: #101a2e;
-    display: flex; flex-direction: column; overflow: hidden; transform-origin: top left;
+    flex: none; width: 210mm; height: 297mm; zoom: .9428; background: #fff; color: #101a2e;
+    display: flex; flex-direction: column; overflow: hidden;
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
+  .pst-page.is-two .pst-sheet { zoom: .65; }
   .pst-top { padding: 20mm 18mm 0; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   /* Le contenu du haut, réduit d'un bloc (zoom) quand il ne tient pas
      au-dessus du bandeau ; la marge du bas l'en tient toujours écarté. */
@@ -110,15 +118,25 @@
     .pst-band .pst-edit:hover, .pst-band .pst-edit:focus { background: rgba(255,255,255,.12); }
   }
 
-  /* À l'impression, seule l'affiche sort, en A4 sans marges (en paysage
-     pour 2 par feuille, voir PosterPanel). Le reste de l'espace vendeur
-     porte la classe Tailwind print:hidden. */
+  /* À l'impression, seule l'affiche sort, sur un A4 sans marges (en paysage
+     pour 2 par feuille, voir PosterPanel) : ses marges blanches sont dans
+     la feuille elle-même. Le reste de l'espace vendeur porte la classe
+     Tailwind print:hidden. */
   @page { size: A4; margin: 0; }
   @media print {
     html, body { background: #fff !important; }
     .min-h-screen { min-height: 0 !important; }
-    .pst-frame { width: auto !important; height: auto !important; box-shadow: none !important; }
-    .pst-page { transform: none !important; }
+    /* 100vw × 100vh = la zone imprimable réelle. Si l'imprimante impose un
+       autre papier (Letter…) ou des marges, la feuille est mise à cette
+       échelle et centrée au lieu d'être coupée ; sur de l'A4 sans marges,
+       rien ne change. Un navigateur qui ne sait pas faire ce calcul ignore
+       la ligne du zoom. */
+    .pst-frame {
+      width: 100vw !important; height: 100vh !important; box-shadow: none !important;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pst-page { transform: none !important; zoom: min(calc(100vw / 210mm), calc(100vh / 297mm)); }
+    .pst-page.is-two { zoom: min(calc(100vw / 297mm), calc(100vh / 210mm)); }
   }
 </style>
 </head>
@@ -2920,6 +2938,9 @@ function PosterPanel({ items, settings }) {
   const others = available.filter((i) => !picked.has(i.id));
   // Plus il y a de meubles, plus la liste se resserre (puis passe sur deux colonnes).
   const density = onPoster.length > 10 ? 'is-compact is-cols' : onPoster.length > 6 ? 'is-compact' : '';
+  // Trop de meubles cochés pour la taille normale : l'affiche a rapetissé
+  // (fit < 1), voire déborde encore.
+  const tooLong = overflow || fit < 1;
   // Les meubles non cochés sont tous cités, par leur nom. Deux annonces du
   // même nom (deux lampes différentes) n'en font qu'une : « Lamp ×2 ».
   const otherNames = [];
@@ -3070,8 +3091,23 @@ function PosterPanel({ items, settings }) {
                 <button onClick={() => savePicks([])} className="text-blue-700 hover:underline">
                   Tout décocher
                 </button>
-                <span className="ml-auto text-slate-500">{onPoster.length} / {available.length}</span>
+                <span className={`ml-auto ${tooLong ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>
+                  {onPoster.length} / {available.length}
+                </span>
               </div>
+              {tooLong && (
+                <div className="mt-2 flex gap-2 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5 text-sm text-amber-900" role="status">
+                  <Icon name="alert" className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    <strong className="font-semibold">Liste cochée trop longue.</strong>{' '}
+                    {overflow
+                      ? 'Même réduite au plus petit, l’affiche déborde sous le bandeau bleu.'
+                      : `Pour tout faire tenir, le texte de l’affiche est réduit à ${Math.round(fit * 100)} %${
+                          twoUp ? ', et encore plus petit en 2 par feuille' : ''}.`}
+                    {' '}Décoche quelques meubles : ils restent cités en bas, dans «&nbsp;Also for sale&nbsp;».
+                  </span>
+                </div>
+              )}
               <ul className="mt-2 border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
                 {available.map((item) => (
                   <li key={item.id}>
@@ -3128,15 +3164,11 @@ function PosterPanel({ items, settings }) {
           </div>
         </section>
 
-        {overflow ? (
-          <div className="flex gap-2 border border-amber-200 bg-amber-50 rounded-xl px-3 py-2.5 text-sm text-amber-900">
-            <Icon name="alert" className="w-4 h-4 mt-0.5 shrink-0" />
-            Même en réduisant le texte, l’affiche déborde : décoche des meubles (ils passent dans
-            la ligne du bas, plus courte) ou raccourcis un texte.
-          </div>
-        ) : fit < 1 && (
-          <p className="text-xs text-slate-500">
-            Texte du haut réduit à {Math.round(fit * 100)} % pour que tout tienne au-dessus du bandeau bleu.
+        {tooLong && (
+          <p className="flex gap-1.5 text-xs text-amber-800">
+            <Icon name="alert" className="w-3.5 h-3.5 mt-px shrink-0" />
+            {overflow ? 'L’affiche déborde : décoche des meubles (voir la liste en haut).'
+                      : `Liste cochée trop longue : texte réduit à ${Math.round(fit * 100)} % (voir la liste en haut).`}
           </p>
         )}
 
@@ -3146,10 +3178,17 @@ function PosterPanel({ items, settings }) {
             Imprimer / Enregistrer en PDF
           </button>
           <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Clique sur un texte de l’affiche pour le modifier. À l’impression : format A4
+            Clique sur un texte de l’affiche pour le modifier. À l’impression : papier A4
             {twoUp && <strong className="font-semibold text-slate-700"> en paysage</strong>},
-            marges « Aucune », « Graphiques d’arrière-plan » coché.
+            « Graphiques d’arrière-plan » coché. La marge blanche est déjà dans l’affiche (l’imprimante
+            ne sait pas imprimer jusqu’au bord) : ce que tu vois ici est ce qui sort.
             {twoUp && ' Coupe ensuite la feuille en deux le long des pointillés.'}
+          </p>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
+            <strong className="font-semibold text-slate-700">Imprimante :</strong> si l’aperçu d’impression
+            montre plus de blanc d’un côté, l’imprimante est réglée sur le papier américain Letter.
+            L’affiche reste entière, mais choisis A4 dans « Plus de paramètres › Taille du papier »
+            (« More settings › Paper size ») pour qu’elle remplisse bien la feuille.
           </p>
           {Object.keys(texts).length > 0 && (
             <button onClick={resetTexts} className="mt-2 text-xs text-slate-500 hover:text-blue-700 underline">
@@ -3164,13 +3203,10 @@ function PosterPanel({ items, settings }) {
         {twoUp && <style>{'@page { size: A4 landscape; margin: 0; }'}</style>}
         <div className="pst-frame mx-auto" style={{ width: page.w * scale, height: page.h * scale }}>
           <div className={`pst-page ${twoUp ? 'is-two' : ''}`} style={{ transform: `scale(${scale})` }}>
-            {twoUp ? (
-              <>
-                <div className="pst-half">{sheet(true)}</div>
-                <div className="pst-half">{sheet(false)}</div>
-                <span className="pst-cut" />
-              </>
-            ) : sheet(true)}
+            {(twoUp ? [true, false] : [true]).map((main) => (
+              <div key={String(main)} className="pst-slot">{sheet(main)}</div>
+            ))}
+            {twoUp && <span className="pst-cut" />}
           </div>
         </div>
       </div>
