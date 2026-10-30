@@ -777,6 +777,32 @@ function matchesSearch(item, query) {
   });
 }
 
+// Mots-clés au-dessus de la liste. Chacun cherche dans le titre l'un de ses
+// mots, au singulier ou au pluriel (« Sofa » trouve aussi « couch »). Ceux
+// qui ne trouvent aucun meuble en vente ne s'affichent pas.
+const SEARCH_TAGS = [
+  { label: 'TV', words: ['tv', 'television'] },
+  { label: 'Table', words: ['table'] },
+  { label: 'Chair', words: ['chair', 'armchair', 'stool'] },
+  { label: 'Sofa', words: ['sofa', 'couch'] },
+  { label: 'Bed', words: ['bed'] },
+  { label: 'Mattress', words: ['mattress'] },
+  { label: 'Desk', words: ['desk'] },
+  { label: 'Lamp', words: ['lamp', 'light'] },
+  { label: 'Shelf', words: ['shelf', 'shelves', 'bookcase', 'bookshelf'] },
+  { label: 'Wardrobe', words: ['wardrobe', 'closet'] },
+  { label: 'Drawers', words: ['drawer', 'dresser'] },
+  { label: 'Mirror', words: ['mirror'] },
+  { label: 'Rug', words: ['rug', 'carpet'] },
+  { label: 'Kitchen', words: ['kitchen', 'microwave', 'kettle', 'toaster', 'pan', 'cutlery', 'plate', 'fridge'] },
+  { label: 'Bike', words: ['bike', 'bicycle'] },
+];
+
+function matchesTag(item, tag) {
+  const words = searchWords(item.title);
+  return tag.words.some((t) => words.some((w) => w === t || w === `${t}s` || w === `${t}es`));
+}
+
 // Tant qu'une fenêtre est ouverte (réservation, photo) : la page derrière
 // ne défile plus et la touche Échap la ferme.
 function useOverlay(onClose) {
@@ -805,12 +831,19 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
 
   // Tri par prix, le plus cher d'abord par défaut. À prix égal, le plus
   // récent reste devant (ordre de chargement). Sans prix = gratuit = 0.
+  // On filtre soit par mot-clé, soit par recherche tapée (la loupe), pas
+  // les deux à la fois.
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [sort, setSort] = useState('desc');
-  const searching = query.trim() !== '';
+  const activeTag = SEARCH_TAGS.find((t) => t.label === tag) || null;
+  const tags = SEARCH_TAGS.filter((t) => t === activeTag || available.some((i) => matchesTag(i, t)));
+  const searching = activeTag !== null || query.trim() !== '';
   const shown = available
-    .filter((i) => matchesSearch(i, query))
+    .filter((i) => (activeTag ? matchesTag(i, activeTag) : matchesSearch(i, query)))
     .sort((a, b) => (priceValue(b.price) - priceValue(a.price)) * (sort === 'asc' ? -1 : 1));
+  const clearSearch = () => { setQuery(''); setTag(null); setSearchOpen(false); };
 
   const steps = [
     ['Pick an item', 'Tap “Book a viewing” under the one you want.'],
@@ -861,21 +894,43 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
 
         {ready && available.length > 0 && (
           <div className="mb-5">
-            <label className="relative block">
-              <span className="sr-only">Search</span>
-              <Icon name="search" className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input type="text" enterKeyHint="search" autoComplete="off" value={query}
-                     onChange={(e) => setQuery(e.target.value)}
-                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                     placeholder="Search: table, TV, bed, mattress…"
-                     className="w-full border border-slate-300 rounded-xl pl-11 pr-11 py-3 text-base bg-white" />
-              {query && (
-                <button type="button" onClick={() => setQuery('')} aria-label="Clear search"
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg text-slate-400 hover:text-slate-700">
+            {searchOpen ? (
+              <label className="relative block">
+                <span className="sr-only">Search</span>
+                <Icon name="search" className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input type="text" enterKeyHint="search" autoComplete="off" autoFocus value={query}
+                       onChange={(e) => setQuery(e.target.value)}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter') e.currentTarget.blur();
+                         if (e.key === 'Escape') clearSearch();
+                       }}
+                       placeholder="Search"
+                       className="w-full border border-slate-300 rounded-full pl-10 pr-10 py-1.5 text-base bg-white" />
+                <button type="button" onClick={clearSearch} aria-label="Close search"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full text-slate-400 hover:text-slate-700">
                   <Icon name="x" className="w-4 h-4" />
                 </button>
-              )}
-            </label>
+              </label>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => { setTag(null); setSearchOpen(true); }} aria-label="Search"
+                        className="w-9 h-9 shrink-0 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700">
+                  <Icon name="search" className="w-4 h-4" />
+                </button>
+                {tags.map((t) => {
+                  const on = t === activeTag;
+                  return (
+                    <button key={t.label} type="button" aria-pressed={on}
+                            onClick={() => setTag(on ? null : t.label)}
+                            className={'h-9 rounded-full border px-3.5 text-sm font-medium '
+                              + (on ? 'bg-blue-700 border-blue-700 text-white'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-700')}>
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="mt-3 flex items-center justify-between gap-3">
               <span className="text-sm text-slate-500">
                 {searching ? `${shown.length} of ${available.length}` : available.length} item{available.length > 1 ? 's' : ''}
@@ -921,9 +976,9 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
           </div>
         ) : shown.length === 0 ? (
           <div className="border border-dashed border-blue-200 rounded-2xl bg-white px-6 py-14 text-center">
-            <h3 className="display font-bold text-xl mb-1">Nothing matches “{query.trim()}”</h3>
+            <h3 className="display font-bold text-xl mb-1">Nothing matches “{activeTag ? activeTag.label : query.trim()}”</h3>
             <p className="text-slate-600">Try another word, like table, chair or lamp.</p>
-            <button onClick={() => setQuery('')}
+            <button onClick={clearSearch}
                     className="mt-5 inline-flex items-center gap-2 font-semibold border border-blue-200 text-blue-800 rounded-xl px-5 py-3 hover:bg-blue-50">
               <Icon name="x" className="w-4 h-4" /> Clear search
             </button>
