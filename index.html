@@ -35,8 +35,43 @@
   };
 </script>
 
+<!-- Windows ne sait pas dessiner les drapeaux en emoji (il écrit « DK » à la
+     place) : on lui prête alors ceux de Twemoji, utilisés seulement pour les
+     drapeaux. iPhone, Android et Mac gardent leurs propres drapeaux. -->
+<script>
+  (function () {
+    try {
+      var c = document.createElement('canvas');
+      c.width = c.height = 1;
+      var ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.textBaseline = 'top';
+      ctx.font = '100px "Twemoji Mozilla","Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji",sans-serif';
+      ctx.scale(0.01, 0.01);
+      // Un emoji en couleur garde ses couleurs quelle que soit l'encre ;
+      // des lettres de remplacement, elles, prennent la couleur de l'encre.
+      var colour = function (text) {
+        var pixel = function (ink) {
+          ctx.clearRect(0, 0, 100, 100);
+          ctx.fillStyle = ink;
+          ctx.fillText(text, 0, 0);
+          return ctx.getImageData(0, 0, 1, 1).data.join(',');
+        };
+        var black = pixel('#000');
+        return black === pixel('#fff') && black.indexOf('0,0,0,') !== 0;
+      };
+      if (colour('😊') && !colour('🇩🇰')) {
+        var style = document.createElement('style');
+        style.textContent = '@font-face { font-family: "Twemoji Country Flags";' +
+          ' unicode-range: U+1F1E6-1F1FF; font-display: swap;' +
+          ' src: url("https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1.8/dist/TwemojiCountryFlags.woff2") format("woff2"); }';
+        document.head.appendChild(style);
+      }
+    } catch (e) { /* pas de canvas : tant pis pour les drapeaux */ }
+  })();
+</script>
+
 <style>
-  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  body { font-family: 'Twemoji Country Flags', 'Inter', system-ui, -apple-system, sans-serif; }
   .display { font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; }
   *:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
   html { scroll-behavior: smooth; }
@@ -510,6 +545,351 @@ function forgetSellerVisit() {
   if (session) sb.from('visits').delete().eq('session', session).then(() => {});
 }
 
+/* ----------------------- numéros de téléphone ---------------------- */
+// L'acheteur choisit son pays (drapeau + indicatif, Danemark par défaut)
+// puis tape son numéro. Il est enregistré au format international,
+// « +45 12 34 56 78 » : l'espace vendeur et les notifications le montrent
+// avec son indicatif, et le lien d'appel marche quel que soit le pays.
+// Les îles des Caraïbes ont leur propre préfixe derrière le +1 (+1 876 la
+// Jamaïque). Le +1 du Canada et le +7 du Kazakhstan sont ceux des
+// États-Unis et de la Russie : côté vendeur, ces numéros prennent leur drapeau.
+const COUNTRY_LINES = `
+AF 93 Afghanistan
+AL 355 Albania
+DZ 213 Algeria
+AS 1684 American Samoa
+AD 376 Andorra
+AO 244 Angola
+AI 1264 Anguilla
+AG 1268 Antigua and Barbuda
+AR 54 Argentina
+AM 374 Armenia
+AW 297 Aruba
+AU 61 Australia
+AT 43 Austria
+AZ 994 Azerbaijan
+BS 1242 Bahamas
+BH 973 Bahrain
+BD 880 Bangladesh
+BB 1246 Barbados
+BY 375 Belarus
+BE 32 Belgium
+BZ 501 Belize
+BJ 229 Benin
+BM 1441 Bermuda
+BT 975 Bhutan
+BO 591 Bolivia
+BA 387 Bosnia and Herzegovina
+BW 267 Botswana
+BR 55 Brazil
+VG 1284 British Virgin Islands
+BN 673 Brunei
+BG 359 Bulgaria
+BF 226 Burkina Faso
+BI 257 Burundi
+KH 855 Cambodia
+CM 237 Cameroon
+CA 1 Canada
+CV 238 Cape Verde
+KY 1345 Cayman Islands
+CF 236 Central African Republic
+TD 235 Chad
+CL 56 Chile
+CN 86 China
+CO 57 Colombia
+KM 269 Comoros
+CG 242 Congo
+CD 243 Congo (DRC)
+CK 682 Cook Islands
+CR 506 Costa Rica
+CI 225 Côte d'Ivoire
+HR 385 Croatia
+CU 53 Cuba
+CW 599 Curaçao
+CY 357 Cyprus
+CZ 420 Czechia
+DK 45 Denmark
+DJ 253 Djibouti
+DM 1767 Dominica
+DO 1809 Dominican Republic
+EC 593 Ecuador
+EG 20 Egypt
+SV 503 El Salvador
+GQ 240 Equatorial Guinea
+ER 291 Eritrea
+EE 372 Estonia
+SZ 268 Eswatini
+ET 251 Ethiopia
+FK 500 Falkland Islands
+FO 298 Faroe Islands
+FJ 679 Fiji
+FI 358 Finland
+FR 33 France
+GF 594 French Guiana
+PF 689 French Polynesia
+GA 241 Gabon
+GM 220 Gambia
+GE 995 Georgia
+DE 49 Germany
+GH 233 Ghana
+GI 350 Gibraltar
+GR 30 Greece
+GL 299 Greenland
+GD 1473 Grenada
+GP 590 Guadeloupe
+GU 1671 Guam
+GT 502 Guatemala
+GN 224 Guinea
+GW 245 Guinea-Bissau
+GY 592 Guyana
+HT 509 Haiti
+HN 504 Honduras
+HK 852 Hong Kong
+HU 36 Hungary
+IS 354 Iceland
+IN 91 India
+ID 62 Indonesia
+IR 98 Iran
+IQ 964 Iraq
+IE 353 Ireland
+IL 972 Israel
+IT 39 Italy
+JM 1876 Jamaica
+JP 81 Japan
+JO 962 Jordan
+KZ 7 Kazakhstan
+KE 254 Kenya
+KI 686 Kiribati
+XK 383 Kosovo
+KW 965 Kuwait
+KG 996 Kyrgyzstan
+LA 856 Laos
+LV 371 Latvia
+LB 961 Lebanon
+LS 266 Lesotho
+LR 231 Liberia
+LY 218 Libya
+LI 423 Liechtenstein
+LT 370 Lithuania
+LU 352 Luxembourg
+MO 853 Macao
+MG 261 Madagascar
+MW 265 Malawi
+MY 60 Malaysia
+MV 960 Maldives
+ML 223 Mali
+MT 356 Malta
+MH 692 Marshall Islands
+MQ 596 Martinique
+MR 222 Mauritania
+MU 230 Mauritius
+MX 52 Mexico
+FM 691 Micronesia
+MD 373 Moldova
+MC 377 Monaco
+MN 976 Mongolia
+ME 382 Montenegro
+MS 1664 Montserrat
+MA 212 Morocco
+MZ 258 Mozambique
+MM 95 Myanmar
+NA 264 Namibia
+NR 674 Nauru
+NP 977 Nepal
+NL 31 Netherlands
+NC 687 New Caledonia
+NZ 64 New Zealand
+NI 505 Nicaragua
+NE 227 Niger
+NG 234 Nigeria
+NU 683 Niue
+KP 850 North Korea
+MK 389 North Macedonia
+MP 1670 Northern Mariana Islands
+NO 47 Norway
+OM 968 Oman
+PK 92 Pakistan
+PW 680 Palau
+PS 970 Palestine
+PA 507 Panama
+PG 675 Papua New Guinea
+PY 595 Paraguay
+PE 51 Peru
+PH 63 Philippines
+PL 48 Poland
+PT 351 Portugal
+PR 1787 Puerto Rico
+QA 974 Qatar
+RE 262 Réunion
+RO 40 Romania
+RU 7 Russia
+RW 250 Rwanda
+KN 1869 Saint Kitts and Nevis
+LC 1758 Saint Lucia
+PM 508 Saint Pierre and Miquelon
+VC 1784 Saint Vincent and the Grenadines
+WS 685 Samoa
+SM 378 San Marino
+ST 239 São Tomé and Príncipe
+SA 966 Saudi Arabia
+SN 221 Senegal
+RS 381 Serbia
+SC 248 Seychelles
+SL 232 Sierra Leone
+SG 65 Singapore
+SX 1721 Sint Maarten
+SK 421 Slovakia
+SI 386 Slovenia
+SB 677 Solomon Islands
+SO 252 Somalia
+ZA 27 South Africa
+KR 82 South Korea
+SS 211 South Sudan
+ES 34 Spain
+LK 94 Sri Lanka
+SD 249 Sudan
+SR 597 Suriname
+SE 46 Sweden
+CH 41 Switzerland
+SY 963 Syria
+TW 886 Taiwan
+TJ 992 Tajikistan
+TZ 255 Tanzania
+TH 66 Thailand
+TL 670 Timor-Leste
+TG 228 Togo
+TO 676 Tonga
+TT 1868 Trinidad and Tobago
+TN 216 Tunisia
+TR 90 Turkey
+TM 993 Turkmenistan
+TC 1649 Turks and Caicos Islands
+TV 688 Tuvalu
+UG 256 Uganda
+UA 380 Ukraine
+AE 971 United Arab Emirates
+GB 44 United Kingdom
+US 1 United States
+UY 598 Uruguay
+VI 1340 U.S. Virgin Islands
+UZ 998 Uzbekistan
+VU 678 Vanuatu
+VE 58 Venezuela
+VN 84 Vietnam
+WF 681 Wallis and Futuna
+YE 967 Yemen
+ZM 260 Zambia
+ZW 263 Zimbabwe`;
+
+// Autres noms sous lesquels on cherche un pays dans la liste.
+const COUNTRY_ALIASES = {
+  GB: 'uk england scotland wales great britain', US: 'usa america', NL: 'holland',
+  CZ: 'czech republic', KR: 'korea', KP: 'korea', CI: 'ivory coast', TR: 'turkiye',
+  CD: 'drc', MK: 'macedonia', SZ: 'swaziland', AE: 'uae dubai', DK: 'danmark',
+  DE: 'deutschland', ES: 'espana', SE: 'sverige', NO: 'norge', CH: 'schweiz suisse',
+};
+
+// Sans accents ni majuscules : « cote » trouve « Côte d'Ivoire ».
+const fold = (s) => String(s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+// Le drapeau, c'est le code du pays écrit en « lettres régionales ».
+const flagOf = (iso) => String.fromCodePoint(...[...iso].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65));
+
+const COUNTRIES = COUNTRY_LINES.trim().split('\n').map((line) => {
+  const [, iso, dial, name] = line.match(/^(\S+) (\d+) (.+)$/);
+  return { iso, dial, name, flag: flagOf(iso), search: fold(`${name} ${iso} ${COUNTRY_ALIASES[iso] || ''}`) };
+}).sort((a, b) => a.name.localeCompare(b.name, 'en'));
+
+const COUNTRY_BY_ISO = {};
+const COUNTRY_BY_DIAL = {};
+COUNTRIES.forEach((c) => {
+  COUNTRY_BY_ISO[c.iso] = c;
+  if (!COUNTRY_BY_DIAL[c.dial] || c.iso === 'US' || c.iso === 'RU') COUNTRY_BY_DIAL[c.dial] = c;
+});
+
+// « 1876 » s'écrit « 1 876 » : c'est un +1, suivi du préfixe de l'île.
+const dialText = (c) => (c.dial.length === 4 ? `1 ${c.dial.slice(1)}` : c.dial);
+
+// Le pays d'un numéro international, d'après ses premiers chiffres.
+// `preferred` l'emporte quand il partage l'indicatif (Canada pour un +1).
+function countryOfDigits(digits, preferred) {
+  for (let n = Math.min(4, digits.length); n >= 1; n--) {
+    const c = COUNTRY_BY_DIAL[digits.slice(0, n)];
+    if (c) return preferred && preferred.dial === c.dial ? preferred : c;
+  }
+  return null;
+}
+
+// Retire les n premiers chiffres d'un texte, en gardant la suite telle quelle.
+function dropDigits(s, n) {
+  let i = 0;
+  while (i < s.length && n > 0) {
+    if (/\d/.test(s[i])) n--;
+    i++;
+  }
+  return s.slice(i).replace(/^\D+/, '');
+}
+
+// Ces pays gardent le 0 du début après l'indicatif (+39 06… à Rome).
+const KEEP_ZERO = ['IT', 'SM', 'CI'];
+
+// La partie du numéro après l'indicatif, propre : les espaces de l'acheteur
+// sont gardés, le 0 national retiré (06 12… en France devient 6 12…), et un
+// numéro danois s'écrit par paires.
+function nationalOf(c, s) {
+  let t = String(s).replace(/\D+/g, ' ').trim();
+  if (!KEEP_ZERO.includes(c.iso)) t = t.replace(/^0\s*/, '');
+  if (c.iso === 'DK') {
+    let d = t.replace(/\D/g, '');
+    if (d.length === 10 && d.startsWith('45')) d = d.slice(2);
+    if (d.length === 8) return d.replace(/(\d\d)(?=\d)/g, '$1 ');
+  }
+  return t;
+}
+
+// Ce qu'a tapé l'acheteur, avec le pays choisi. S'il a tapé lui-même un
+// indicatif (« +33… », « 0033… », ou un numéro rempli par le téléphone),
+// c'est celui-là qui compte : `typedCode`, et `rest` le numéro sans lui.
+function parsePhone(iso, raw) {
+  const picked = COUNTRY_BY_ISO[iso] || COUNTRY_BY_ISO.DK;
+  const s = String(raw || '').trim();
+  const intl = s.match(/^(?:\+|00)(.*)$/);
+  if (!intl) return { country: picked, typedCode: false, rest: s, national: nationalOf(picked, s) };
+  const country = countryOfDigits(intl[1].replace(/\D/g, ''), picked);
+  const rest = country ? dropDigits(intl[1], country.dial.length) : '';
+  return { country, typedCode: true, rest, national: country ? nationalOf(country, rest) : '' };
+}
+
+const fullPhone = (p) => `+${dialText(p.country)} ${p.national}`;
+
+// Message d'erreur, ou '' si le numéro tient debout.
+function phoneProblem(p) {
+  const digits = p.national.replace(/\D/g, '');
+  if (!p.country) return 'Please check the country code.';
+  if (!digits) return 'Please enter your phone number.';
+  if (p.country.iso === 'DK' && digits.length !== 8) return 'A Danish number has 8 digits.';
+  const min = p.country.dial.length >= 3 ? 4 : 6;
+  if (digits.length < min || digits.length + p.country.dial.length > 15) return 'Please enter a valid phone number.';
+  return '';
+}
+
+// Un numéro enregistré, prêt à afficher côté vendeur : avec son indicatif,
+// le drapeau du pays et le lien pour appeler. Les rendez-vous pris avant
+// le choix du pays n'ont pas d'indicatif : 8 chiffres, c'est un numéro danois.
+function phoneInfo(raw) {
+  const s = String(raw || '').trim().replace(/\s+/g, ' ');
+  const d = s.replace(/\D/g, '');
+  let text = s;
+  if (s.startsWith('00')) text = `+${s.slice(2).trim()}`;
+  else if (!s.startsWith('+') && d.length === 8) text = `+45 ${d.replace(/(\d\d)(?=\d)/g, '$1 ')}`;
+  const intl = text.startsWith('+') ? text.replace(/\D/g, '') : '';
+  return {
+    text,
+    country: intl ? countryOfDigits(intl) : null,
+    href: `tel:${intl ? `+${intl}` : d}`,
+  };
+}
+
 /* ------------------------------ icônes ----------------------------- */
 const PATHS = {
   calendar: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
@@ -539,6 +919,7 @@ const PATHS = {
   key: 'M21 2l-9.6 9.6M15.5 7.5l3 3L22 7l-3-3M7.5 21a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11z',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  down: 'm6 9 6 6 6-6',
 };
 
 function Icon({ name, className }) {
@@ -1350,6 +1731,83 @@ function PickupMap({ address }) {
   );
 }
 
+// La liste des pays, par-dessus la fenêtre de réservation. Le Danemark (et
+// le pays déjà choisi) en tête, puis tous les pays de A à Z ; on peut
+// chercher par début de nom ou par indicatif (« fra », « +33 »).
+function CountryPicker({ value, onPick, onClose }) {
+  const [query, setQuery] = useState('');
+  const boxRef = useRef(null);
+  const searchRef = useRef(null);
+
+  // Sur ordinateur on peut taper tout de suite ; sur téléphone le clavier
+  // cacherait la moitié de la liste, il ne s'ouvre que si on touche la recherche.
+  useEffect(() => {
+    const mouse = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+    (mouse ? searchRef.current : boxRef.current).focus();
+  }, []);
+
+  const q = query.trim();
+  const byCode = /^\+?[\d\s]+$/.test(q);
+  const found = !q ? null
+    : byCode ? COUNTRIES.filter((c) => c.dial.startsWith(q.replace(/\D/g, '')))
+    : COUNTRIES.filter((c) => ` ${c.search}`.includes(` ${fold(q)}`));
+  const top = value === 'DK' ? [COUNTRY_BY_ISO.DK] : [COUNTRY_BY_ISO.DK, COUNTRY_BY_ISO[value]].filter(Boolean);
+
+  const row = (c) => {
+    const on = c.iso === value;
+    return (
+      <li key={c.iso}>
+        <button type="button" onClick={() => onPick(c.iso)} aria-current={on || undefined}
+                className={`w-full flex items-center gap-3 px-5 py-3 text-left ${on ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+          <span className="text-2xl leading-none w-8 text-center shrink-0" aria-hidden="true">{c.flag}</span>
+          <span className={`flex-1 min-w-0 truncate ${on ? 'font-semibold text-blue-800' : ''}`}>{c.name}</span>
+          <span className="text-slate-500 tabular-nums whitespace-nowrap">+{dialText(c)}</span>
+          {on ? <Icon name="check" className="w-5 h-5 text-blue-700 shrink-0" /> : <span className="w-5 shrink-0" />}
+        </button>
+      </li>
+    );
+  };
+
+  return (
+    <div ref={boxRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Choose your country code"
+         className="absolute inset-0 z-10 bg-white flex flex-col outline-none"
+         onKeyDown={(e) => {
+           // Échap ferme la liste, pas toute la réservation.
+           if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+         }}>
+      <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
+        <button type="button" onClick={onClose} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
+          <Icon name="left" className="w-6 h-6" />
+        </button>
+        <p className="flex-1 text-center font-semibold">Country code</p>
+        <span className="w-11" />
+      </div>
+      <div className="px-5 pt-4 pb-2 shrink-0">
+        <div className="relative">
+          <Icon name="search" className="w-5 h-5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === 'Enter' && found && found.length) onPick(found[0].iso); }}
+                 placeholder="Search a country or +code" aria-label="Search a country or code"
+                 autoComplete="off" enterKeyHint="search"
+                 className="w-full border border-slate-300 rounded-xl pl-11 pr-4 py-3 text-base bg-white" />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto overscroll-contain pb-4">
+        {found ? (
+          found.length ? <ul>{found.map(row)}</ul>
+                       : <p className="px-5 py-10 text-center text-slate-500">No country found.</p>
+        ) : (
+          <>
+            <ul>{top.map(row)}</ul>
+            <div className="mx-5 my-2 border-t border-slate-200" />
+            <ul>{COUNTRIES.map(row)}</ul>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, onItemTaken }) {
   const plan = scheduleFor(item, settings);
   const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
@@ -1361,6 +1819,11 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
   const [slot, setSlot] = useState(null);
   const [firstName, setFirstName] = useState('');
   const [phone, setPhone] = useState('');
+  // Le pays de l'indicatif, choisi dans la liste à drapeaux (CountryPicker).
+  const [country, setCountry] = useState('DK');
+  const [picking, setPicking] = useState(false);
+  const phoneRef = useRef(null);
+  const codeRef = useRef(null);
   const [payment, setPayment] = useState('');
   // Plusieurs exemplaires en vente : l'acheteur dit combien il en prend
   // (`left` : ceux qui ne sont ni vendus ni réservés).
@@ -1394,9 +1857,38 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
     setError(message || '');
   };
 
+  // Le numéro tel qu'il sera enregistré. Le drapeau suit un indicatif
+  // tapé à la main (« +33… ») pendant qu'on l'écrit.
+  const tel = parsePhone(country, phone);
+  const shownCountry = tel.country || COUNTRY_BY_ISO[country];
+
+  const pickCountry = (iso) => {
+    setCountry(iso);
+    // Un indicatif tapé dans le numéro laisse la place au pays choisi.
+    if (tel.typedCode) setPhone(tel.rest);
+    setPicking(false);
+    setError('');
+    if (phoneRef.current) phoneRef.current.focus();
+  };
+
+  const closePicker = () => {
+    setPicking(false);
+    if (codeRef.current) codeRef.current.focus();
+  };
+
+  // En quittant le champ, un indicatif tapé à la main passe dans le
+  // sélecteur : « +33 6 12… » devient France + « 6 12… ».
+  const tidyPhone = () => {
+    if (tel.typedCode && tel.country) {
+      setCountry(tel.country.iso);
+      setPhone(tel.rest);
+    }
+  };
+
   const submit = async () => {
     if (firstName.trim().length < 2) return setError('Please enter your first name.');
-    if (phone.replace(/\D/g, '').length < 6) return setError('Please enter a valid phone number.');
+    const phoneError = phoneProblem(tel);
+    if (phoneError) return setError(phoneError);
     if (!payment) return setError('Please choose how you will pay.');
     if (taken.has(`${day} ${slot}`)) return backToTimes('Sorry, that time was just taken. Please pick another one.');
     setError('');
@@ -1405,7 +1897,7 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
       item_id: item.id,
       item_title: item.title,
       first_name: firstName.trim(),
-      phone: phone.trim(),
+      phone: fullPhone(tel),
       payment,
       day,
       slot,
@@ -1527,12 +2019,27 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
                autoComplete="given-name" className={field} placeholder="Marie" />
       </label>
 
-      <label className="block mt-4">
-        <span className="font-semibold">Your phone number</span>
-        <span className="block text-sm text-slate-500">I will text you on it to confirm.</span>
-        <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-               autoComplete="tel" className={field} placeholder="+45 12 34 56 78" />
-      </label>
+      {/* Pas de <label> autour : un clic sur le texte ouvrirait la liste des pays. */}
+      <div className="mt-4">
+        <label htmlFor="booking-phone" className="block">
+          <span className="font-semibold">Your phone number</span>
+          <span className="block text-sm text-slate-500">I will text you on it to confirm.</span>
+        </label>
+        <div className="mt-1.5 flex items-stretch gap-2">
+          <button ref={codeRef} type="button" onClick={() => setPicking(true)} aria-haspopup="dialog"
+                  aria-label={`Country code: ${shownCountry.name}, +${dialText(shownCountry)}. Change`}
+                  className="shrink-0 flex items-center gap-1.5 border border-slate-300 rounded-xl pl-3 pr-2.5 bg-white hover:border-blue-400">
+            <span className="text-xl leading-none" aria-hidden="true">{shownCountry.flag}</span>
+            <span className="font-medium tabular-nums whitespace-nowrap">+{dialText(shownCountry)}</span>
+            <Icon name="down" className="w-4 h-4 text-slate-500" />
+          </button>
+          <input id="booking-phone" ref={phoneRef} type="tel" value={phone}
+                 onChange={(e) => { setPhone(e.target.value); setError(''); }} onBlur={tidyPhone}
+                 autoComplete="tel" inputMode="tel"
+                 className="min-w-0 flex-1 border border-slate-300 rounded-xl px-4 py-3 text-base bg-white"
+                 placeholder={shownCountry.iso === 'DK' ? '12 34 56 78' : 'Phone number'} />
+        </div>
+      </div>
 
       <fieldset className="mt-6">
         <legend className="font-semibold">How will you pay?</legend>
@@ -1617,8 +2124,9 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
     <div className="fixed inset-0 z-40 sm:bg-slate-900/50 sm:flex sm:items-center sm:justify-center sm:p-4"
          onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={`Book a viewing: ${item.title}`}
-           className="bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
+           className="relative bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
            onClick={(e) => e.stopPropagation()}>
+        {picking && !done && !gone && <CountryPicker value={country} onPick={pickCountry} onClose={closePicker} />}
         <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
           {step === 2 && !done && !gone ? (
             <button onClick={() => backToTimes()} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
@@ -3311,6 +3819,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
             const item = itemOf(b);
             const n = sellable(b, item);
             const past = `${String(b.day).slice(0, 10)} ${b.slot}` <= nowKey;
+            const tel = phoneInfo(b.phone);
             return (
               <li key={b.id} className={`border rounded-xl px-4 py-4 ${b.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3322,8 +3831,10 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                       <span className={`text-xs rounded-full px-2 py-0.5 ${cls}`}>{label}</span>
                     </div>
                     <p className="mt-1.5 text-sm text-slate-600 flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <a href={`tel:${String(b.phone).replace(/\s/g, '')}`} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
-                        <Icon name="phone" className="w-3.5 h-3.5" /> {b.phone}
+                      <a href={tel.href} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
+                        <Icon name="phone" className="w-3.5 h-3.5" />
+                        {tel.country && <span className="text-base leading-none" title={tel.country.name}>{tel.country.flag}</span>}
+                        <span className="whitespace-nowrap tabular-nums">{tel.text}</span>
                       </a>
                       <span className="inline-flex items-center gap-1.5">
                         <Icon name="calendar" className="w-3.5 h-3.5" /> {fmtDate(b.day, 'fr-FR')}
