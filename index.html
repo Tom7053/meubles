@@ -300,6 +300,42 @@ async function fetchHeld() {
   return error || !data ? {} : Object.fromEntries(data.map((r) => [r.item_id, r.qty]));
 }
 
+/* ------------------------------- panier ----------------------------- */
+// L'acheteur met plusieurs meubles de côté, puis prend UN rendez-vous pour
+// tous ou me laisse son numéro à leur sujet. Le panier reste dans ce
+// navigateur et ne réserve rien : [{ id, count }].
+const CART_KEY = 'meubles-panier';
+
+function loadCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CART_KEY));
+    if (!Array.isArray(saved)) return [];
+    return saved.filter((e) => e && e.id != null)
+      .map((e) => ({ id: e.id, count: Math.max(1, parseInt(e.count, 10) || 1) }));
+  } catch { return []; }
+}
+
+function saveCart(cart) {
+  try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* navigation privée */ }
+}
+
+// Prix de plusieurs meubles ensemble : « 1.250 kr », ou « Free ».
+const linesTotal = (lines) => lines.reduce((sum, l) => sum + priceValue(l.item.price) * l.count, 0);
+const showTotal = (lines) => (linesTotal(lines) > 0 ? fmtKr(linesTotal(lines)) : 'Free');
+const countAll = (lines) => lines.reduce((sum, l) => sum + l.count, 0);
+
+// Relie les lignes d'un même rendez-vous (bookings.cart_id, migration-panier.sql).
+function newCartId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b);
+  else b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 256); });
+  b[6] = (b[6] & 15) | 64;
+  b[8] = (b[8] & 63) | 128;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 /* ---------------------------- fin de vente -------------------------- */
 // Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
 // les calendriers s'arrêtent là et on ne peut pas aller au mois suivant.
@@ -920,6 +956,8 @@ const PATHS = {
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   down: 'm6 9 6 6 6-6',
+  bag: 'M6 8h12l-1 12H7L6 8zM9 8V7a3 3 0 0 1 6 0v1',
+  message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
 };
 
 function Icon({ name, className }) {
@@ -1019,6 +1057,21 @@ function bookableDays(plan, taken) {
   return out;
 }
 
+// Plusieurs meubles pris au même rendez-vous : seuls restent les jours et
+// les heures où chacun d'eux peut partir.
+function scheduleForAll(list, settings) {
+  const plans = list.map((item) => scheduleFor(item, settings));
+  if (plans.length < 2) return plans[0] || scheduleFor({}, settings);
+  const [first] = plans;
+  return {
+    ...first,
+    weekdays: first.weekdays.map((_, i) => plans.every((p) => p.weekdays[i])),
+    slots: first.slots.filter((s) => plans.every((p) => p.slots.includes(s))),
+    start: plans.reduce((m, p) => (p.start > m ? p.start : m), first.start),
+    until: plans.reduce((m, p) => (p.until < m ? p.until : m), first.until),
+  };
+}
+
 /* =================================================================== */
 
 function App() {
@@ -1033,6 +1086,10 @@ function App() {
   // Exemplaires retenus par un rendez-vous, par meuble (fetchHeld).
   const [held, setHeld] = useState({});
   const [bookings, setBookings] = useState([]);
+  // Demandes de contact (migration-panier.sql) ; missing tant que la table
+  // n'existe pas.
+  const [messages, setMessages] = useState([]);
+  const [messagesMissing, setMessagesMissing] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   // Nombre de photos en plus de la couverture, par meuble.
@@ -1131,10 +1188,21 @@ function App() {
     if (data) setBookings(data);
   }, [session]);
 
+  const loadMessages = useCallback(async () => {
+    if (!sb || !session) return;
+    const { data, error } = await sb.from('contact_requests').select('*').order('created_at', { ascending: false });
+    setMessagesMissing(!!error);
+    if (data) setMessages(data);
+  }, [session]);
+
   useEffect(() => { loadPublic(); }, [loadPublic]);
   useEffect(() => { loadBookings(); }, [loadBookings]);
+  useEffect(() => { loadMessages(); }, [loadMessages]);
 
-  /* ---- alerte temps réel sur les nouveaux rendez-vous ---- */
+  /* ---- alerte temps réel sur les nouveaux rendez-vous et messages ---- */
+  // Les meubles d'un même panier arrivent ligne par ligne : on attend un
+  // instant pour n'afficher qu'une alerte par rendez-vous.
+  const cartAlerts = useRef({});
   useEffect(() => {
     if (!sb || !session) return;
     const channel = sb
@@ -1143,13 +1211,31 @@ function App() {
         const b = payload.new;
         setBookings((prev) => (prev.some((x) => x.id === b.id) ? prev : [...prev, b]));
         setBusy((prev) => [...prev, { day: b.day, slot: b.slot }]);
-        pushToast(`Nouveau rendez-vous — ${b.first_name}${b.quantity > 1 ? ` (${b.quantity} × ${b.item_title})` : ''}, ${fmtDate(b.day, 'fr-FR')} à ${b.slot}`, 'new');
+        const when = `${fmtDate(b.day, 'fr-FR')} à ${b.slot}`;
+        if (!b.cart_id) {
+          pushToast(`Nouveau rendez-vous — ${b.first_name}${b.quantity > 1 ? ` (${b.quantity} × ${b.item_title})` : ''}, ${when}`, 'new');
+          return;
+        }
+        const waiting = cartAlerts.current;
+        if (waiting[b.cart_id]) { waiting[b.cart_id] += 1; return; }
+        waiting[b.cart_id] = 1;
+        setTimeout(() => {
+          const n = waiting[b.cart_id];
+          delete waiting[b.cart_id];
+          pushToast(`Nouveau rendez-vous — ${b.first_name}, ${n} meuble${n > 1 ? 's' : ''}, ${when}`, 'new');
+        }, 1500);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contact_requests' }, (payload) => {
+        const m = payload.new;
+        setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [m, ...prev]));
+        pushToast(`Nouveau message — ${m.first_name}, ${phoneInfo(m.phone).text}`, 'new');
       })
       .subscribe();
     return () => { sb.removeChannel(channel); };
   }, [session, pushToast]);
 
   const newCount = bookings.filter((b) => b.status === 'new').length;
+  const newMessages = messages.filter((m) => m.status === 'new').length;
 
   if (!configured) {
     return (
@@ -1178,10 +1264,14 @@ function App() {
           onRetry={() => { setReady(false); loadPublic(); }}
           onAdmin={goAdmin}
           onSlotTaken={markBusy}
-          onBooked={(row) => {
-            markBusy(row);
-            // Le meuble quitte la liste tout de suite, sans recharger.
-            setHeld((prev) => ({ ...prev, [row.item_id]: (prev[row.item_id] || 0) + (row.quantity || 1) }));
+          onBooked={(rows) => {
+            markBusy(rows[0]);
+            // Les meubles quittent la liste tout de suite, sans recharger.
+            setHeld((prev) => {
+              const next = { ...prev };
+              rows.forEach((r) => { next[r.item_id] = (next[r.item_id] || 0) + (r.quantity || 1); });
+              return next;
+            });
           }}
           onItemTaken={refreshHeld}
         />
@@ -1202,10 +1292,14 @@ function App() {
           setPhotoCounts={setPhotoCounts}
           bookings={bookings}
           setBookings={setBookings}
+          messages={messages}
+          setMessages={setMessages}
+          messagesMissing={messagesMissing}
           settings={settings}
           setSettings={setSettings}
           newCount={newCount}
-          reload={() => { loadPublic(); loadBookings(); }}
+          newMessages={newMessages}
+          reload={() => { loadPublic(); loadBookings(); loadMessages(); }}
           pushToast={pushToast}
           onShop={goShop}
         />
@@ -1293,12 +1387,70 @@ function useOverlay(onClose) {
 
 function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onRetry, onAdmin,
                 onSlotTaken, onBooked, onItemTaken }) {
-  const [booking, setBooking] = useState(null);
+  // La fenêtre ouverte : { kind: 'cart' }, { kind: 'book', target }, ou
+  // { kind: 'contact', target } ; target est un meuble, 'cart' pour tout
+  // le panier, ou null pour une question générale.
+  const [sheet, setSheet] = useState(null);
   const [photo, setPhoto] = useState(null);
   // Exemplaires encore libres : ni vendus, ni retenus par un rendez-vous.
   const freeQty = (item) => Math.max(0, leftQty(item) - (held[item.id] || 0));
   const available = items.filter((i) => i.status !== 'sold' && freeQty(i) > 0);
   const photoTotal = (item) => (item.image ? 1 + (photoCounts[item.id] || 0) : 0);
+
+  /* ---- panier ---- */
+  const [cart, setCart] = useState(loadCart);
+  // Ce qui a dû sortir du panier (réservé par quelqu'un d'autre entre-temps).
+  const [cartNotice, setCartNotice] = useState('');
+  useEffect(() => saveCart(cart), [cart]);
+  const findItem = (id) => items.find((i) => String(i.id) === String(id));
+  const inCart = (item) => cart.some((e) => String(e.id) === String(item.id));
+  const cartLines = cart
+    .map((e) => { const item = findItem(e.id); return item && { item, count: e.count, left: freeQty(item) }; })
+    .filter((l) => l && l.item.status !== 'sold' && l.left > 0);
+
+  // Un meuble réservé ou vendu entre-temps sort du panier, et on ne garde
+  // pas plus d'exemplaires qu'il n'en reste.
+  useEffect(() => {
+    if (!ready || loadFailed) return;
+    const gone = [];
+    const next = [];
+    cart.forEach((e) => {
+      const item = findItem(e.id);
+      const left = item && item.status !== 'sold' ? freeQty(item) : 0;
+      if (left < 1) { if (item) gone.push(item.title); return; }
+      next.push(left < e.count ? { ...e, count: left } : e);
+    });
+    if (next.length === cart.length && next.every((e, i) => e === cart[i])) return;
+    setCart(next);
+    if (gone.length) {
+      setCartNotice(`${gone.join(', ')} ${gone.length > 1 ? 'were' : 'was'} just booked by someone else and left your cart.`);
+    }
+  }, [ready, loadFailed, items, held]);
+
+  const toggleCart = (item) => {
+    setCartNotice('');
+    if (inCart(item)) return setCart((c) => c.filter((e) => String(e.id) !== String(item.id)));
+    track('item_book', item.id);
+    setCart((c) => [...c, { id: item.id, count: 1 }]);
+  };
+  const setCartCount = (item, count) =>
+    setCart((c) => c.map((e) => (String(e.id) === String(item.id) ? { ...e, count } : e)));
+
+  // Les meubles d'une fenêtre : un seul, tout le panier, ou aucun.
+  const linesOf = (target) => (target === 'cart' ? cartLines
+    : target ? [{ item: target, count: 1, left: freeQty(target) }] : []);
+
+  // Prénom et numéro tapés une fois servent aux fenêtres suivantes (gardés
+  // le temps de la visite seulement).
+  const [buyer, setBuyer] = useState({ firstName: '', phone: '', country: 'DK' });
+
+  const booked = (rows) => {
+    // Le panier d'abord : ces meubles partent parce que c'est lui qui les a
+    // réservés, pas besoin de lui dire qu'ils ont disparu.
+    setCart((c) => c.filter((e) => !rows.some((r) => String(r.item_id) === String(e.id))));
+    onBooked(rows);
+  };
+  const cartCount = countAll(cartLines);
 
   // Tri par prix, le plus cher d'abord par défaut. À prix égal, le plus
   // récent reste devant (ordre de chargement). Sans prix = gratuit = 0.
@@ -1317,13 +1469,13 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
   const clearSearch = () => { setQuery(''); setTag(null); setSearchOpen(false); };
 
   const steps = [
-    ['Pick an item', 'Tap “Book a viewing” under the one you want.'],
+    ['Pick items', 'Book one, or add several to your cart and book them together.'],
     ['Book a time', 'Choose a day, leave your first name and number.'],
     ['Pick up & pay', `I text you to confirm. Pay by ${settings.payment}.`],
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`min-h-screen bg-slate-50 ${cartLines.length ? 'pb-24' : ''}`}>
       <header className="bg-blue-800 text-white">
         <div className="max-w-5xl mx-auto px-5 pt-9 pb-16 sm:pt-14 sm:pb-20">
           <p className="text-blue-200 text-sm font-medium">Moving out of Odense on 20 November</p>
@@ -1342,6 +1494,10 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
                 <Icon name="card" className="w-4 h-4" /> {settings.payment}
               </span>
             )}
+            <button type="button" onClick={() => setSheet({ kind: 'contact', target: null })}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-white text-blue-800 font-semibold hover:bg-blue-50 px-3 py-1.5">
+              <Icon name="message" className="w-4 h-4" /> Questions? Leave your number
+            </button>
           </div>
         </div>
       </header>
@@ -1458,7 +1614,10 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((item) => (
               <ItemCard key={item.id} item={item} left={freeQty(item)} photoTotal={photoTotal(item)}
-                        onBook={() => { track('item_book', item.id); setBooking(item); }}
+                        inCart={inCart(item)}
+                        onBook={() => { track('item_book', item.id); setSheet({ kind: 'book', target: item }); }}
+                        onCart={() => toggleCart(item)}
+                        onAsk={() => { track('item_book', item.id); setSheet({ kind: 'contact', target: item }); }}
                         onPhoto={() => { track('item_photos', item.id); setPhoto(item); }} />
             ))}
           </ul>
@@ -1470,6 +1629,10 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
       <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-5xl mx-auto px-5 py-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
           <span>Pickup only · {settings.payment}</span>
+          <button onClick={() => setSheet({ kind: 'contact', target: null })}
+                  className="inline-flex items-center gap-1.5 text-blue-700 font-medium hover:underline">
+            <Icon name="message" className="w-3.5 h-3.5" /> Contact me
+          </button>
           <button onClick={onAdmin}
                   className="inline-flex items-center gap-1.5 text-slate-400 hover:text-blue-700">
             <Icon name="lock" className="w-3.5 h-3.5" /> Seller access
@@ -1477,16 +1640,62 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
         </div>
       </footer>
 
-      {booking && (
-        <BookingSheet
-          item={booking}
-          left={freeQty(booking)}
+      {cartLines.length > 0 && !sheet && !photo && (
+        <div className="fixed inset-x-0 bottom-0 z-30 px-4 pb-4 pt-2 pointer-events-none">
+          <button onClick={() => setSheet({ kind: 'cart' })}
+                  className="pointer-events-auto w-full max-w-md mx-auto flex items-center gap-3 rounded-2xl bg-blue-900 hover:bg-blue-950 text-white pl-4 pr-3 py-3 shadow-xl shadow-blue-900/30">
+            <span className="relative shrink-0">
+              <Icon name="bag" className="w-6 h-6" />
+              <span className="absolute -top-1.5 -right-2 min-w-[1.25rem] h-5 px-1 rounded-full bg-white text-blue-900 text-xs font-bold inline-flex items-center justify-center tabular-nums">
+                {cartCount}
+              </span>
+            </span>
+            <span className="flex-1 min-w-0 text-left pl-1">
+              <span className="block font-semibold leading-tight">Your cart · {cartCount} item{cartCount > 1 ? 's' : ''}</span>
+              <span className="block text-sm text-blue-200">{showTotal(cartLines)} · one visit for everything</span>
+            </span>
+            <span className="shrink-0 inline-flex items-center gap-1 font-semibold text-sm bg-white/15 rounded-xl px-3 py-2">
+              View <Icon name="right" className="w-4 h-4" />
+            </span>
+          </button>
+        </div>
+      )}
+
+      {sheet && sheet.kind === 'cart' && (
+        <CartSheet
+          lines={cartLines}
+          notice={cartNotice}
           busy={busy}
           settings={settings}
-          onClose={() => setBooking(null)}
+          onCount={setCartCount}
+          onRemove={toggleCart}
+          onClose={() => setSheet(null)}
+          onBook={() => { setCartNotice(''); setSheet({ kind: 'book', target: 'cart' }); }}
+          onContact={() => setSheet({ kind: 'contact', target: 'cart' })}
+        />
+      )}
+      {sheet && sheet.kind === 'book' && (
+        <BookingSheet
+          lines={linesOf(sheet.target)}
+          busy={busy}
+          settings={settings}
+          buyer={buyer}
+          onBuyer={setBuyer}
+          onClose={() => setSheet(null)}
           onTaken={onSlotTaken}
-          onBooked={onBooked}
+          onBooked={booked}
           onItemTaken={onItemTaken}
+          onContact={() => setSheet({ kind: 'contact', target: sheet.target })}
+          onCart={sheet.target === 'cart' ? () => setSheet({ kind: 'cart' }) : null}
+        />
+      )}
+      {sheet && sheet.kind === 'contact' && (
+        <ContactSheet
+          lines={linesOf(sheet.target)}
+          buyer={buyer}
+          onBuyer={setBuyer}
+          onClose={() => setSheet(null)}
+          onBook={sheet.target ? () => setSheet({ kind: 'book', target: sheet.target }) : null}
         />
       )}
       {photo && (
@@ -1494,14 +1703,16 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
           item={photo}
           total={photoTotal(photo)}
           onClose={() => setPhoto(null)}
-          onBook={() => { track('item_book', photo.id); setPhoto(null); setBooking(photo); }}
+          onBook={() => { track('item_book', photo.id); setPhoto(null); setSheet({ kind: 'book', target: photo }); }}
         />
       )}
     </div>
   );
 }
 
-function ItemCard({ item, left, photoTotal, onBook, onPhoto }) {
+const SECONDARY_BTN = 'w-full inline-flex items-center justify-center gap-1.5 font-semibold text-sm rounded-xl py-3 px-2 border whitespace-nowrap ';
+
+function ItemCard({ item, left, photoTotal, inCart, onBook, onCart, onAsk, onPhoto }) {
   const links = Array.isArray(item.links) ? item.links : [];
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
   const several = totalQty(item) > 1;
@@ -1604,10 +1815,22 @@ function ItemCard({ item, left, photoTotal, onBook, onPhoto }) {
           </p>
         )}
 
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-4 space-y-2">
           <button onClick={onBook} className={PRIMARY_BTN}>
             <Icon name="calendar" className="w-5 h-5" /> Book a viewing
           </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onCart} aria-pressed={inCart}
+                    aria-label={inCart ? `${item.title} is in your cart. Remove it` : `Add ${item.title} to your cart`}
+                    className={SECONDARY_BTN + (inCart
+                      ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100'
+                      : 'bg-white border-blue-200 text-blue-800 hover:bg-blue-50')}>
+              <Icon name={inCart ? 'check' : 'bag'} className="w-4 h-4 shrink-0" /> {inCart ? 'In your cart' : 'Add to cart'}
+            </button>
+            <button onClick={onAsk} className={SECONDARY_BTN + 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-800'}>
+              <Icon name="message" className="w-4 h-4 shrink-0" /> Contact me
+            </button>
+          </div>
         </div>
       </div>
     </li>
@@ -1808,31 +2031,261 @@ function CountryPicker({ value, onPick, onClose }) {
   );
 }
 
-function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, onItemTaken }) {
-  const plan = scheduleFor(item, settings);
+// Fenêtre de la boutique : plein écran sur téléphone, centrée sur ordinateur.
+// `overlay` se pose par-dessus (liste des pays), `footer` reste en bas.
+function Sheet({ label, title, sub, onBack, onClose, overlay, footer, bodyRef, children }) {
+  return (
+    <div className="fixed inset-0 z-40 sm:bg-slate-900/50 sm:flex sm:items-center sm:justify-center sm:p-4"
+         onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={label}
+           className="relative bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
+           onClick={(e) => e.stopPropagation()}>
+        {overlay}
+        <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
+          {onBack ? (
+            <button onClick={onBack} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
+              <Icon name="left" className="w-6 h-6" />
+            </button>
+          ) : <span className="w-11" />}
+          <div className="flex-1 text-center min-w-0">
+            <p className="font-semibold truncate">{title}</p>
+            {sub && <p className="text-xs text-slate-500">{sub}</p>}
+          </div>
+          <button onClick={onClose} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Close">
+            <Icon name="x" className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain">{children}</div>
+
+        <div className="border-t border-slate-200 bg-white px-5 py-3 shrink-0">{footer}</div>
+      </div>
+    </div>
+  );
+}
+
+function LineThumb({ item, small }) {
+  return (
+    <div className={`${small ? 'w-11 h-11 rounded-lg' : 'w-14 h-14 rounded-xl'} bg-blue-50 overflow-hidden shrink-0 flex items-center justify-center`}>
+      {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                  : <Icon name="image" className="w-6 h-6 text-blue-300" />}
+    </div>
+  );
+}
+
+// Les meubles d'une réservation ou d'une question : « 2 × Lit … 900 kr ».
+function LinesList({ lines }) {
+  return (
+    <ul className="divide-y divide-slate-100">
+      {lines.map(({ item, count }) => (
+        <li key={item.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+          <LineThumb item={item} small />
+          <span className="flex-1 min-w-0 font-semibold leading-snug">
+            {count > 1 && <span className="text-blue-800">{count} × </span>}{item.title}
+          </span>
+          <span className="shrink-0 font-semibold text-blue-700 whitespace-nowrap">{priceFor(item.price, count)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// Le numéro de l'acheteur : pays (drapeau + indicatif) puis numéro. Sert à
+// la réservation et à la demande de contact ; la liste des pays s'ouvre
+// par-dessus la fenêtre (CountryPicker, posé par la fenêtre).
+function usePhoneField(initial) {
+  const [phone, setPhone] = useState((initial && initial.phone) || '');
+  // Le pays de l'indicatif, choisi dans la liste à drapeaux.
+  const [country, setCountry] = useState((initial && initial.country) || 'DK');
+  const [picking, setPicking] = useState(false);
+  const phoneRef = useRef(null);
+  const codeRef = useRef(null);
+  // Le numéro tel qu'il sera enregistré. Le drapeau suit un indicatif
+  // tapé à la main (« +33… ») pendant qu'on l'écrit.
+  const tel = parsePhone(country, phone);
+  const shown = tel.country || COUNTRY_BY_ISO[country];
+  return {
+    phone, setPhone, country, tel, shown, picking, phoneRef, codeRef,
+    open: () => setPicking(true),
+    pick: (iso) => {
+      setCountry(iso);
+      // Un indicatif tapé dans le numéro laisse la place au pays choisi.
+      if (tel.typedCode) setPhone(tel.rest);
+      setPicking(false);
+      if (phoneRef.current) phoneRef.current.focus();
+    },
+    close: () => {
+      setPicking(false);
+      if (codeRef.current) codeRef.current.focus();
+    },
+    // En quittant le champ, un indicatif tapé à la main passe dans le
+    // sélecteur : « +33 6 12… » devient France + « 6 12… ».
+    tidy: () => {
+      if (tel.typedCode && tel.country) {
+        setCountry(tel.country.iso);
+        setPhone(tel.rest);
+      }
+    },
+    // De quoi préremplir la fenêtre suivante.
+    saved: () => ({ country: shown.iso, phone: tel.typedCode ? tel.rest : phone }),
+  };
+}
+
+function PhoneField({ field: f, id, hint, onEdit }) {
+  // Pas de <label> autour : un clic sur le texte ouvrirait la liste des pays.
+  return (
+    <div className="mt-4">
+      <label htmlFor={id} className="block">
+        <span className="font-semibold">Your phone number</span>
+        {hint && <span className="block text-sm text-slate-500">{hint}</span>}
+      </label>
+      <div className="mt-1.5 flex items-stretch gap-2">
+        <button ref={f.codeRef} type="button" onClick={f.open} aria-haspopup="dialog"
+                aria-label={`Country code: ${f.shown.name}, +${dialText(f.shown)}. Change`}
+                className="shrink-0 flex items-center gap-1.5 border border-slate-300 rounded-xl pl-3 pr-2.5 bg-white hover:border-blue-400">
+          <span className="text-xl leading-none" aria-hidden="true">{f.shown.flag}</span>
+          <span className="font-medium tabular-nums whitespace-nowrap">+{dialText(f.shown)}</span>
+          <Icon name="down" className="w-4 h-4 text-slate-500" />
+        </button>
+        <input id={id} ref={f.phoneRef} type="tel" value={f.phone}
+               onChange={(e) => { f.setPhone(e.target.value); onEdit(); }} onBlur={f.tidy}
+               autoComplete="tel" inputMode="tel"
+               className="min-w-0 flex-1 border border-slate-300 rounded-xl px-4 py-3 text-base bg-white"
+               placeholder={f.shown.iso === 'DK' ? '12 34 56 78' : 'Phone number'} />
+      </div>
+    </div>
+  );
+}
+
+const FIELD = 'mt-1.5 w-full border border-slate-300 rounded-xl px-4 py-3 text-base bg-white';
+
+// Le panier : nombre d'exemplaires, retirer, puis un seul rendez-vous pour
+// tout ou une question d'abord.
+function CartSheet({ lines, notice, busy, settings, onCount, onRemove, onClose, onBook, onContact }) {
+  useOverlay(onClose);
+  const n = countAll(lines);
+  // Un meuble qui n'a plus aucun créneau empêcherait de tout réserver ensemble.
+  const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
+  const noTime = (item) => bookableDays(scheduleFor(item, settings), taken).length === 0;
+  const stepBtn = 'w-9 h-9 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 '
+    + 'disabled:border-slate-100 disabled:text-slate-300';
+  const several = lines.length > 1;
+
+  const footer = lines.length ? (
+    <div className="space-y-2">
+      <button onClick={onBook} className={PRIMARY_BTN}>
+        <Icon name="calendar" className="w-5 h-5" /> {several ? 'Book one viewing for all' : 'Book a viewing'}
+      </button>
+      <button onClick={onContact}
+              className={SECONDARY_BTN + 'text-base py-3 bg-white border-blue-200 text-blue-800 hover:bg-blue-50'}>
+        <Icon name="message" className="w-4 h-4" /> Ask me a question first
+      </button>
+    </div>
+  ) : (
+    <button onClick={onClose} className={PRIMARY_BTN}>Back to the list</button>
+  );
+
+  return (
+    <Sheet label="Your cart" title="Your cart" sub={n ? `${n} item${n > 1 ? 's' : ''}` : null}
+           onClose={onClose} footer={footer}>
+      <div className="px-5 py-5">
+        {notice && (
+          <p role="status" className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-900">
+            {notice}
+          </p>
+        )}
+        {lines.length === 0 ? (
+          <div className="py-10 text-center">
+            <Icon name="bag" className="w-10 h-10 text-blue-200 mx-auto" />
+            <p className="mt-3 font-semibold">Your cart is empty</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Tap “Add to cart” under the items you want, then book them all at once.
+            </p>
+          </div>
+        ) : (
+          <>
+            <ul className="divide-y divide-slate-100">
+              {lines.map(({ item, count, left }) => (
+                <li key={item.id} className="py-3 first:pt-0 flex items-start gap-3">
+                  <LineThumb item={item} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold leading-snug">{item.title}</p>
+                      <button onClick={() => onRemove(item)} aria-label={`Remove ${item.title} from your cart`}
+                              className="-mt-1.5 -mr-2 p-2 shrink-0 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50">
+                        <Icon name="trash" className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      {left > 1 ? (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => onCount(item, count - 1)} disabled={count <= 1}
+                                  aria-label={`One less ${item.title}`} className={stepBtn}>−</button>
+                          <span className="w-6 text-center font-bold tabular-nums" aria-live="polite">{count}</span>
+                          <button onClick={() => onCount(item, count + 1)} disabled={count >= left}
+                                  aria-label={`One more ${item.title}`} className={stepBtn}>+</button>
+                          <span className="text-xs text-slate-500">of {left}</span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-slate-500 truncate">{item.condition ? `Condition: ${item.condition}` : ''}</span>
+                      )}
+                      <span className="font-semibold text-blue-700 whitespace-nowrap">{priceFor(item.price, count)}</span>
+                    </div>
+                    {several && noTime(item) && (
+                      <p className="mt-1 text-sm font-medium text-amber-700">No pickup times left: remove it to book the rest.</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 pt-4 border-t border-slate-200 flex items-baseline justify-between gap-3">
+              <span className="font-semibold">Total</span>
+              <span className="display font-bold text-2xl text-blue-700">{showTotal(lines)}</span>
+            </div>
+            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
+              {several ? 'You pick everything up at the same visit' : 'You pick it up'} and pay on pickup.
+              Nothing is reserved until you book a time.
+            </p>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+// Réservation d'un meuble, ou de tout le panier au même rendez-vous.
+// lines : [{ item, count, left }], `left` = exemplaires ni vendus ni réservés.
+function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken, onBooked, onItemTaken, onContact, onCart }) {
+  const multi = lines.length > 1;
+  const plan = scheduleForAll(lines.map((l) => l.item), settings);
   const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
   const days = bookableDays(plan, taken);
+  // Panier sans créneau commun : les meubles qui n'ont plus aucun créneau
+  // à eux seuls, pour dire lequel retirer.
+  const stuck = multi && days.length === 0
+    ? lines.filter((l) => bookableDays(scheduleFor(l.item, settings), taken).length === 0).map((l) => l.item.title)
+    : [];
 
   const [step, setStep] = useState(1);
   // Le premier jour libre est déjà choisi : les heures s'affichent tout de suite.
   const [day, setDay] = useState(() => days[0] || null);
   const [slot, setSlot] = useState(null);
-  const [firstName, setFirstName] = useState('');
-  const [phone, setPhone] = useState('');
-  // Le pays de l'indicatif, choisi dans la liste à drapeaux (CountryPicker).
-  const [country, setCountry] = useState('DK');
-  const [picking, setPicking] = useState(false);
-  const phoneRef = useRef(null);
-  const codeRef = useRef(null);
+  const [firstName, setFirstName] = useState(buyer.firstName || '');
+  const phoneField = usePhoneField(buyer);
   const [payment, setPayment] = useState('');
-  // Plusieurs exemplaires en vente : l'acheteur dit combien il en prend
-  // (`left` : ceux qui ne sont ni vendus ni réservés).
-  const [count, setCount] = useState(1);
+  // Un seul meuble en plusieurs exemplaires : l'acheteur dit combien il en
+  // prend. Pour le panier, les nombres viennent du panier.
+  const [count, setCount] = useState(() => (lines[0] ? Math.max(1, Math.min(lines[0].count, lines[0].left)) : 1));
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  // { rows, lines } une fois envoyé : ce qui a été réservé, gardé tel quel.
   const [done, setDone] = useState(null);
-  // Quelqu'un d'autre vient de réserver le dernier exemplaire.
-  const gone = !done && left < 1;
+  const picked = (multi ? lines.map((l) => ({ ...l, count: Math.min(l.count, l.left) }))
+                        : lines.map((l) => ({ ...l, count }))).filter((l) => l.count > 0);
+  const only = lines[0] && lines[0].item;
+  const left = lines[0] ? lines[0].left : 0;
+  // Quelqu'un d'autre vient de réserver le dernier exemplaire (ou tout le panier).
+  const gone = !done && (picked.length === 0 || (!multi && left < 1));
   const bodyRef = useRef(null);
   const timesRef = useRef(null);
   useOverlay(onClose);
@@ -1857,73 +2310,55 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
     setError(message || '');
   };
 
-  // Le numéro tel qu'il sera enregistré. Le drapeau suit un indicatif
-  // tapé à la main (« +33… ») pendant qu'on l'écrit.
-  const tel = parsePhone(country, phone);
-  const shownCountry = tel.country || COUNTRY_BY_ISO[country];
-
-  const pickCountry = (iso) => {
-    setCountry(iso);
-    // Un indicatif tapé dans le numéro laisse la place au pays choisi.
-    if (tel.typedCode) setPhone(tel.rest);
-    setPicking(false);
-    setError('');
-    if (phoneRef.current) phoneRef.current.focus();
-  };
-
-  const closePicker = () => {
-    setPicking(false);
-    if (codeRef.current) codeRef.current.focus();
-  };
-
-  // En quittant le champ, un indicatif tapé à la main passe dans le
-  // sélecteur : « +33 6 12… » devient France + « 6 12… ».
-  const tidyPhone = () => {
-    if (tel.typedCode && tel.country) {
-      setCountry(tel.country.iso);
-      setPhone(tel.rest);
-    }
-  };
-
   const submit = async () => {
     if (firstName.trim().length < 2) return setError('Please enter your first name.');
-    const phoneError = phoneProblem(tel);
+    const phoneError = phoneProblem(phoneField.tel);
     if (phoneError) return setError(phoneError);
     if (!payment) return setError('Please choose how you will pay.');
     if (taken.has(`${day} ${slot}`)) return backToTimes('Sorry, that time was just taken. Please pick another one.');
     setError('');
     setSending(true);
-    const row = {
-      item_id: item.id,
-      item_title: item.title,
+    // Une ligne par meuble, toutes au même créneau et reliées par cart_id.
+    const cartId = picked.length > 1 ? newCartId() : null;
+    const rows = picked.map((l) => ({
+      item_id: l.item.id,
+      item_title: l.item.title,
       first_name: firstName.trim(),
-      phone: fullPhone(tel),
+      phone: fullPhone(phoneField.tel),
       payment,
       day,
       slot,
       status: 'new',
-      // Envoyé seulement s'il sert : la réservation marche même si
-      // migration-quantite.sql n'a pas encore été lancé.
-      ...(count > 1 ? { quantity: count } : {}),
-    };
-    const { error: err } = await sb.from('bookings').insert(row);
+      // Envoyés seulement s'ils servent : réserver un seul meuble marche
+      // même si migration-quantite.sql ou migration-panier.sql manquent.
+      ...(l.count > 1 ? { quantity: l.count } : {}),
+      ...(cartId ? { cart_id: cartId } : {}),
+    }));
+    // Tout ou rien : si un seul meuble est déjà pris, rien n'est réservé.
+    const { error: err } = await sb.from('bookings').insert(rows);
     setSending(false);
     // 23505 = quelqu'un d'autre a réservé ce créneau entre-temps.
     if (err && err.code === '23505') {
-      onTaken(row);
+      onTaken(rows[0]);
       return backToTimes('Sorry, someone just took that time. Please pick another one.');
     }
-    // item_taken = quelqu'un d'autre vient de réserver ce meuble
-    // (migration-reservation.sql). La liste est relue : s'il n'en reste
-    // plus, la fenêtre le dit.
+    // item_taken = quelqu'un d'autre vient de réserver un de ces meubles
+    // (migration-reservation.sql). La liste est relue : ce qui n'est plus
+    // libre sort du panier, et la fenêtre le dit s'il ne reste rien.
     if (err && err.message === 'item_taken') {
       setCount(1);
       onItemTaken();
-      return setError('Sorry, someone else just booked this item.');
+      return setError(multi
+        ? 'Sorry, someone else just booked one of these items. Your cart is updated: check it and try again.'
+        : 'Sorry, someone else just booked this item.');
     }
-    if (err) return setError('Something went wrong. Please try again.');
-    onBooked(row);
-    setDone(row);
+    if (err) {
+      console.warn('[meubles] réservation :', err.message);
+      return setError('Something went wrong. Please try again.');
+    }
+    onBuyer({ firstName: firstName.trim(), ...phoneField.saved() });
+    onBooked(rows);
+    setDone({ rows, lines: picked });
   };
 
   const dayChip = (k) => {
@@ -1946,10 +2381,21 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
   const stepOne = (
     <div>
       <h3 className="font-semibold text-lg">Which day can you come?</h3>
+      {multi && days.length > 0 && (
+        <p className="text-sm text-slate-500">Only the times when all {picked.length} items can be picked up.</p>
+      )}
       {days.length === 0 ? (
-        <p className="mt-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-center text-slate-600">
-          Sorry, there are no free times left for this item.
-        </p>
+        <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-center text-slate-600">
+          <p>
+            {!multi ? 'Sorry, there are no free times left for this item.'
+              : stuck.length ? `Sorry, there are no free times left for ${stuck.join(' and ')}. Remove ${stuck.length > 1 ? 'them' : 'it'} from your cart to book the rest.`
+              : 'Sorry, there is no time when all these items can be picked up together. Try booking them one by one.'}
+          </p>
+          <button onClick={onContact}
+                  className="mt-4 inline-flex items-center gap-2 font-semibold border border-blue-200 bg-white text-blue-800 rounded-xl px-4 py-2.5 hover:bg-blue-50">
+            <Icon name="message" className="w-4 h-4" /> Leave your number, I’ll call you
+          </button>
+        </div>
       ) : (
         <>
           <div className="mt-3 -mx-5 px-5 scroll-px-5 flex gap-2 overflow-x-auto snap-x no-scrollbar pb-1 sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
@@ -1959,7 +2405,7 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
         </>
       )}
 
-      {day && (
+      {day && days.length > 0 && (
         <div ref={timesRef} className="mt-7 scroll-mt-4">
           <h3 className="font-semibold text-lg">What time?</h3>
           <p className="text-sm text-slate-500">{fmtDate(day, 'en-GB')}</p>
@@ -1983,7 +2429,6 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
     </div>
   );
 
-  const field = 'mt-1.5 w-full border border-slate-300 rounded-xl px-4 py-3 text-base bg-white';
   const stepTwo = (
     <div>
       <button onClick={() => backToTimes()}
@@ -1996,10 +2441,10 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
         <span className="text-sm font-semibold text-blue-700">Change</span>
       </button>
 
-      {left > 1 && (
+      {!multi && left > 1 && (
         <div className="mt-6">
           <span className="font-semibold">How many do you want?</span>
-          <span className="block text-sm text-slate-500">{left} available · {showPrice(item.price)} each</span>
+          <span className="block text-sm text-slate-500">{left} available · {showPrice(only.price)} each</span>
           <div className="mt-2 flex items-center gap-3">
             <button type="button" onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1}
                     className="w-12 h-12 rounded-xl border border-slate-300 bg-white text-2xl font-semibold text-slate-700 disabled:border-slate-100 disabled:text-slate-300"
@@ -2008,7 +2453,7 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
             <button type="button" onClick={() => setCount(Math.min(left, count + 1))} disabled={count >= left}
                     className="w-12 h-12 rounded-xl border border-slate-300 bg-white text-2xl font-semibold text-slate-700 disabled:border-slate-100 disabled:text-slate-300"
                     aria-label="One more">+</button>
-            <span className="ml-auto font-semibold text-blue-700">{priceFor(item.price, count)}</span>
+            <span className="ml-auto font-semibold text-blue-700">{priceFor(only.price, count)}</span>
           </div>
         </div>
       )}
@@ -2016,30 +2461,11 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
       <label className="block mt-6">
         <span className="font-semibold">Your first name</span>
         <input value={firstName} onChange={(e) => setFirstName(e.target.value)}
-               autoComplete="given-name" className={field} placeholder="Marie" />
+               autoComplete="given-name" className={FIELD} placeholder="Marie" />
       </label>
 
-      {/* Pas de <label> autour : un clic sur le texte ouvrirait la liste des pays. */}
-      <div className="mt-4">
-        <label htmlFor="booking-phone" className="block">
-          <span className="font-semibold">Your phone number</span>
-          <span className="block text-sm text-slate-500">I will text you on it to confirm.</span>
-        </label>
-        <div className="mt-1.5 flex items-stretch gap-2">
-          <button ref={codeRef} type="button" onClick={() => setPicking(true)} aria-haspopup="dialog"
-                  aria-label={`Country code: ${shownCountry.name}, +${dialText(shownCountry)}. Change`}
-                  className="shrink-0 flex items-center gap-1.5 border border-slate-300 rounded-xl pl-3 pr-2.5 bg-white hover:border-blue-400">
-            <span className="text-xl leading-none" aria-hidden="true">{shownCountry.flag}</span>
-            <span className="font-medium tabular-nums whitespace-nowrap">+{dialText(shownCountry)}</span>
-            <Icon name="down" className="w-4 h-4 text-slate-500" />
-          </button>
-          <input id="booking-phone" ref={phoneRef} type="tel" value={phone}
-                 onChange={(e) => { setPhone(e.target.value); setError(''); }} onBlur={tidyPhone}
-                 autoComplete="tel" inputMode="tel"
-                 className="min-w-0 flex-1 border border-slate-300 rounded-xl px-4 py-3 text-base bg-white"
-                 placeholder={shownCountry.iso === 'DK' ? '12 34 56 78' : 'Phone number'} />
-        </div>
-      </div>
+      <PhoneField field={phoneField} id="booking-phone" hint="I will text you on it to confirm."
+                  onEdit={() => setError('')} />
 
       <fieldset className="mt-6">
         <legend className="font-semibold">How will you pay?</legend>
@@ -2065,7 +2491,213 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
     </div>
   );
 
+  // En tête de fenêtre : le meuble, ou tous ceux du panier avec le total.
+  const summary = multi ? (
+    <div className="pb-5 mb-5 border-b border-slate-100">
+      <LinesList lines={picked} />
+      <p className="mt-3 pt-3 border-t border-slate-100 flex items-baseline justify-between gap-3 font-semibold">
+        <span>{countAll(picked)} items · one visit</span>
+        <span className="text-blue-700">{showTotal(picked)}</span>
+      </p>
+    </div>
+  ) : only && (
+    <div className="flex items-center gap-3 pb-5 mb-5 border-b border-slate-100">
+      <LineThumb item={only} />
+      <div className="min-w-0">
+        <p className="font-semibold leading-snug">{only.title}</p>
+        <p className="text-blue-700 font-semibold">
+          {showPrice(only.price)}{left > 1 && priceValue(only.price) > 0 ? ' each' : ''}
+        </p>
+      </div>
+    </div>
+  );
+
   const q = encodeURIComponent(settings.address || '');
+  const doneView = done && (() => {
+    const r = done.rows[0];
+    const one = done.lines.length === 1 ? done.lines[0] : null;
+    return (
+      <div className="px-5 py-8">
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-full bg-green-100 text-green-700 flex items-center justify-center mx-auto">
+            <Icon name="check" className="w-8 h-8" />
+          </div>
+          <h3 className="display font-bold text-2xl mt-4">Thanks {r.first_name}!</h3>
+          <p className="mt-2 text-slate-600 leading-relaxed">
+            Your booking is sent. I will text you on{' '}
+            <strong className="text-slate-900 whitespace-nowrap">{r.phone}</strong> to confirm.
+          </p>
+        </div>
+
+        <ul className="mt-6 rounded-2xl border border-slate-200 divide-y divide-slate-100">
+          <li className="flex items-start gap-3 px-4 py-3">
+            <Icon name="calendar" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+            <span>
+              <span className="block font-semibold">{fmtDate(r.day, 'en-GB')}</span>
+              <span className="block text-sm text-slate-500">
+                at {r.slot}{one ? ` · ${one.count > 1 ? `${one.count} × ` : ''}${one.item.title}` : ` · ${countAll(done.lines)} items`}
+              </span>
+            </span>
+          </li>
+          {!one && (
+            <li className="px-4 py-3">
+              <LinesList lines={done.lines} />
+            </li>
+          )}
+          {settings.address && (
+            <li className="flex items-start gap-3 px-4 py-3">
+              <Icon name="pin" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+              <span>
+                <span className="block font-semibold">{settings.address}</span>
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${q}`} target="_blank" rel="noreferrer"
+                   className="text-sm text-blue-700 hover:underline">Get directions</a>
+              </span>
+            </li>
+          )}
+          {paymentLabel(r.payment, 'en') && (
+            <li className="flex items-start gap-3 px-4 py-3">
+              <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
+              <span>
+                <span className="block font-semibold">{one ? priceFor(one.item.price, one.count) : showTotal(done.lines)}</span>
+                <span className="block text-sm text-slate-500">Pay on pickup by {paymentLabel(r.payment, 'en')}</span>
+              </span>
+            </li>
+          )}
+        </ul>
+        <p className="mt-4 text-center text-sm text-slate-500">Tip: take a screenshot to keep the time and address.</p>
+      </div>
+    );
+  })();
+
+  const goneView = (
+    <div className="px-5 py-14 text-center">
+      <h3 className="display font-bold text-2xl">Just booked by someone else</h3>
+      <p className="mt-2 text-slate-600 leading-relaxed">
+        Sorry, {multi || !only ? 'these items are' : `${only.title} is`} no longer available. Have a look at the other items.
+      </p>
+    </div>
+  );
+
+  const footer = (
+    <>
+      {error && !gone && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
+      {done || gone ? (
+        <button onClick={onClose} className={PRIMARY_BTN}>Back to the list</button>
+      ) : step === 1 ? (
+        <button onClick={() => setStep(2)} disabled={!slot} className={PRIMARY_BTN}>
+          {slot ? `Continue · ${fmtShort(day)} at ${slot}` : day && days.length ? 'Pick a time' : 'Pick a day'}
+        </button>
+      ) : (
+        <button onClick={submit} disabled={sending} className={PRIMARY_BTN}>
+          {sending ? 'Sending…' : multi ? `Book this time for ${countAll(picked)} items` : 'Book this time'}
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <Sheet label={multi ? `Book a viewing for ${countAll(picked)} items` : `Book a viewing: ${only ? only.title : ''}`}
+           title={done ? 'Booking sent' : 'Book a viewing'}
+           sub={!done && !gone ? `Step ${step} of 2` : null}
+           onBack={done ? null : step === 2 && !gone ? () => backToTimes() : onCart}
+           onClose={onClose}
+           overlay={phoneField.picking && !done && !gone && (
+             <CountryPicker value={phoneField.country} onPick={(iso) => { phoneField.pick(iso); setError(''); }}
+                            onClose={phoneField.close} />
+           )}
+           footer={footer}
+           bodyRef={bodyRef}>
+      {done ? doneView : gone ? goneView : (
+        <div className="px-5 py-5">
+          {summary}
+          {step === 1 ? stepOne : stepTwo}
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
+// « Rappelez-moi » : prénom, numéro et un message, sur un meuble, sur le
+// panier ou en général (lines vide). Rien n'est réservé ; la demande arrive
+// dans l'onglet Messages de l'espace vendeur (migration-panier.sql).
+function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
+  // Les meubles tels qu'à l'ouverture : la demande garde sa liste même si
+  // l'un d'eux part entre-temps.
+  const [list] = useState(() => lines.map(({ item, count }) => ({ item, count })));
+  const [firstName, setFirstName] = useState(buyer.firstName || '');
+  const phoneField = usePhoneField(buyer);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(null);
+  const bodyRef = useRef(null);
+  useOverlay(onClose);
+  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = 0; }, [done]);
+
+  const them = list.length > 1 ? 'them' : 'it';
+
+  const submit = async () => {
+    if (firstName.trim().length < 2) return setError('Please enter your first name.');
+    const phoneError = phoneProblem(phoneField.tel);
+    if (phoneError) return setError(phoneError);
+    setError('');
+    setSending(true);
+    const row = {
+      first_name: firstName.trim(),
+      phone: fullPhone(phoneField.tel),
+      message: message.trim().slice(0, 1000) || null,
+      items: list.map(({ item, count }) => ({ id: item.id, title: item.title, price: item.price || null, quantity: count })),
+    };
+    const { error: err } = await sb.from('contact_requests').insert(row);
+    setSending(false);
+    if (err) {
+      console.warn('[meubles] contact :', err.message);
+      return setError('Something went wrong. Please try again.');
+    }
+    onBuyer({ firstName: row.first_name, ...phoneField.saved() });
+    setDone(row);
+  };
+
+  const about = list.length > 0 && (
+    <div className="rounded-2xl border border-slate-200 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">About</p>
+      <LinesList lines={list} />
+    </div>
+  );
+
+  const form = (
+    <div className="px-5 py-5">
+      <p className="text-slate-600 leading-relaxed">
+        Leave your number and I will call or text you back.
+      </p>
+      {about && <div className="mt-4">{about}</div>}
+
+      <label className="block mt-6">
+        <span className="font-semibold">Your first name</span>
+        <input value={firstName} onChange={(e) => { setFirstName(e.target.value); setError(''); }}
+               autoComplete="given-name" className={FIELD} placeholder="Marie" />
+      </label>
+
+      <PhoneField field={phoneField} id="contact-phone" hint="I will call or text you on it."
+                  onEdit={() => setError('')} />
+
+      <label className="block mt-6">
+        <span className="font-semibold">Your message</span>
+        <span className="text-sm text-slate-500"> (optional)</span>
+        <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} maxLength={1000}
+                  className={`${FIELD} resize-y leading-relaxed`}
+                  placeholder={list.length ? 'E.g. Can you hold it until Saturday? Can I see it in the evening?'
+                                           : 'E.g. Do you have a desk? Can I come in the evening?'} />
+      </label>
+
+      {list.length > 0 && (
+        <p className="mt-4 text-sm text-slate-500 leading-relaxed">
+          This doesn’t reserve anything. To hold {list.length > 1 ? 'these items' : 'this item'}, book a viewing.
+        </p>
+      )}
+    </div>
+  );
+
   const doneView = done && (
     <div className="px-5 py-8">
       <div className="text-center">
@@ -2074,110 +2706,61 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
         </div>
         <h3 className="display font-bold text-2xl mt-4">Thanks {done.first_name}!</h3>
         <p className="mt-2 text-slate-600 leading-relaxed">
-          Your booking is sent. I will text you on{' '}
-          <strong className="text-slate-900 whitespace-nowrap">{done.phone}</strong> to confirm.
+          Message sent. I will call or text you on{' '}
+          <strong className="text-slate-900 whitespace-nowrap">{done.phone}</strong> as soon as I can.
         </p>
       </div>
-
-      <ul className="mt-6 rounded-2xl border border-slate-200 divide-y divide-slate-100">
-        <li className="flex items-start gap-3 px-4 py-3">
-          <Icon name="calendar" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
-          <span>
-            <span className="block font-semibold">{fmtDate(done.day, 'en-GB')}</span>
-            <span className="block text-sm text-slate-500">at {done.slot} · {count > 1 ? `${count} × ` : ''}{item.title}</span>
-          </span>
-        </li>
-        {settings.address && (
-          <li className="flex items-start gap-3 px-4 py-3">
-            <Icon name="pin" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
-            <span>
-              <span className="block font-semibold">{settings.address}</span>
-              <a href={`https://www.google.com/maps/dir/?api=1&destination=${q}`} target="_blank" rel="noreferrer"
-                 className="text-sm text-blue-700 hover:underline">Get directions</a>
-            </span>
-          </li>
-        )}
-        {paymentLabel(done.payment, 'en') && (
-          <li className="flex items-start gap-3 px-4 py-3">
-            <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
-            <span>
-              <span className="block font-semibold">{priceFor(item.price, count)}</span>
-              <span className="block text-sm text-slate-500">Pay on pickup by {paymentLabel(done.payment, 'en')}</span>
-            </span>
-          </li>
-        )}
-      </ul>
-      <p className="mt-4 text-center text-sm text-slate-500">Tip: take a screenshot to keep the time and address.</p>
+      {about && <div className="mt-6">{about}</div>}
+      {done.message && (
+        <blockquote className="mt-4 rounded-2xl bg-slate-50 border border-slate-200 px-4 py-3 text-slate-700 whitespace-pre-line">
+          {done.message}
+        </blockquote>
+      )}
+      {list.length > 0 && (
+        <p className="mt-4 text-center text-sm text-slate-500">
+          Nothing is reserved yet: book a viewing to hold {them}.
+        </p>
+      )}
     </div>
   );
 
-  const goneView = (
-    <div className="px-5 py-14 text-center">
-      <h3 className="display font-bold text-2xl">Just booked by someone else</h3>
-      <p className="mt-2 text-slate-600 leading-relaxed">
-        Sorry, {item.title} is no longer available. Have a look at the other items.
-      </p>
-    </div>
+  const footer = (
+    <>
+      {error && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
+      {done ? (
+        <div className="space-y-2">
+          {onBook && list.length > 0 && (
+            <button onClick={onBook} className={PRIMARY_BTN}>
+              <Icon name="calendar" className="w-5 h-5" /> Book a viewing now
+            </button>
+          )}
+          <button onClick={onClose}
+                  className={onBook && list.length > 0
+                    ? SECONDARY_BTN + 'text-base py-3 bg-white border-blue-200 text-blue-800 hover:bg-blue-50'
+                    : PRIMARY_BTN}>
+            Back to the list
+          </button>
+        </div>
+      ) : (
+        <button onClick={submit} disabled={sending} className={PRIMARY_BTN}>
+          <Icon name="message" className="w-5 h-5" /> {sending ? 'Sending…' : 'Send'}
+        </button>
+      )}
+    </>
   );
 
   return (
-    <div className="fixed inset-0 z-40 sm:bg-slate-900/50 sm:flex sm:items-center sm:justify-center sm:p-4"
-         onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label={`Book a viewing: ${item.title}`}
-           className="relative bg-white w-full h-full flex flex-col overflow-hidden sm:h-auto sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:shadow-xl"
-           onClick={(e) => e.stopPropagation()}>
-        {picking && !done && !gone && <CountryPicker value={country} onPick={pickCountry} onClose={closePicker} />}
-        <div className="flex items-center gap-2 px-2 py-2 border-b border-slate-200 shrink-0">
-          {step === 2 && !done && !gone ? (
-            <button onClick={() => backToTimes()} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Back">
-              <Icon name="left" className="w-6 h-6" />
-            </button>
-          ) : <span className="w-11" />}
-          <div className="flex-1 text-center min-w-0">
-            <p className="font-semibold truncate">{done ? 'Booking sent' : 'Book a viewing'}</p>
-            {!done && !gone && <p className="text-xs text-slate-500">Step {step} of 2</p>}
-          </div>
-          <button onClick={onClose} className="p-2.5 rounded-lg text-slate-600 hover:bg-slate-100" aria-label="Close">
-            <Icon name="x" className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div ref={bodyRef} className="flex-1 overflow-y-auto overscroll-contain">
-          {done ? doneView : gone ? goneView : (
-            <div className="px-5 py-5">
-              <div className="flex items-center gap-3 pb-5 mb-5 border-b border-slate-100">
-                <div className="w-14 h-14 rounded-xl bg-blue-50 overflow-hidden shrink-0 flex items-center justify-center">
-                  {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
-                              : <Icon name="image" className="w-6 h-6 text-blue-300" />}
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold leading-snug">{item.title}</p>
-                  <p className="text-blue-700 font-semibold">
-                    {showPrice(item.price)}{left > 1 && priceValue(item.price) > 0 ? ' each' : ''}
-                  </p>
-                </div>
-              </div>
-              {step === 1 ? stepOne : stepTwo}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-slate-200 bg-white px-5 py-3 shrink-0">
-          {error && !gone && <p className="mb-2 text-sm text-red-600" role="alert">{error}</p>}
-          {done || gone ? (
-            <button onClick={onClose} className={PRIMARY_BTN}>Back to the list</button>
-          ) : step === 1 ? (
-            <button onClick={() => setStep(2)} disabled={!slot} className={PRIMARY_BTN}>
-              {slot ? `Continue · ${fmtShort(day)} at ${slot}` : day ? 'Pick a time' : 'Pick a day'}
-            </button>
-          ) : (
-            <button onClick={submit} disabled={sending} className={PRIMARY_BTN}>
-              {sending ? 'Sending…' : 'Book this time'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    <Sheet label="Contact the seller" title={done ? 'Message sent' : 'Contact me'}
+           sub={!done && list.length ? (list.length > 1 ? `About ${list.length} items` : list[0].item.title) : null}
+           onClose={onClose}
+           overlay={phoneField.picking && !done && (
+             <CountryPicker value={phoneField.country} onPick={(iso) => { phoneField.pick(iso); setError(''); }}
+                            onClose={phoneField.close} />
+           )}
+           footer={footer}
+           bodyRef={bodyRef}>
+      {done ? doneView : form}
+    </Sheet>
   );
 }
 
@@ -2185,8 +2768,8 @@ function BookingSheet({ item, left, busy, settings, onClose, onTaken, onBooked, 
 
 function Admin({ session, authReady, recovering, linkProblem, onRecovered,
                  items, setItems, manyPhotos, photoCounts, setPhotoCounts,
-                 bookings, setBookings, settings, setSettings,
-                 newCount, reload, pushToast, onShop }) {
+                 bookings, setBookings, messages, setMessages, messagesMissing, settings, setSettings,
+                 newCount, newMessages, reload, pushToast, onShop }) {
   const [tab, setTab] = useState('annonces');
 
   if (!authReady) {
@@ -2221,6 +2804,7 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
         <div className="max-w-5xl mx-auto px-2 sm:px-5 flex sm:gap-1 overflow-x-auto no-scrollbar">
           {[['annonces', 'Annonces', items.filter((i) => i.status !== 'sold').length],
             ['rdv', 'Rendez-vous', newCount],
+            ['messages', 'Messages', newMessages],
             ['planning', 'Planning', 0],
             ['affiche', 'Affiche', 0],
             ['stats', 'Stats', 0]].map(([id, label, count]) => (
@@ -2231,7 +2815,7 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
               {label}
               {count > 0 && (
                 <span className={`rounded-full px-2 py-0.5 text-xs ${
-                  id === 'rdv' ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-700'}`}>{count}</span>
+                  id === 'rdv' || id === 'messages' ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-700'}`}>{count}</span>
               )}
             </button>
           ))}
@@ -2246,6 +2830,10 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
         {tab === 'rdv' && (
           <BookingsPanel bookings={bookings} setBookings={setBookings}
                          items={items} setItems={setItems} pushToast={pushToast} />
+        )}
+        {tab === 'messages' && (
+          <MessagesPanel messages={messages} setMessages={setMessages} missing={messagesMissing}
+                         items={items} pushToast={pushToast} />
         )}
         {tab === 'planning' && <PlanningPanel settings={settings} setSettings={setSettings} bookings={bookings} pushToast={pushToast} />}
         {tab === 'affiche' && <PosterPanel items={items} settings={settings} />}
@@ -3702,11 +4290,17 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   // Rendez-vous dont on note la vente (encadré « à quel prix ? »).
   const [selling, setSelling] = useState(null);
 
-  const update = async (id, status) => {
-    const { error } = await sb.from('bookings').update({ status }).eq('id', id);
+  // Un rendez-vous pris pour tout un panier, ce sont plusieurs lignes au
+  // même cart_id : confirmer, refuser et supprimer valent pour toutes.
+  const update = async (rows, status) => {
+    const ids = rows.filter((b) => !b.outcome).map((b) => b.id);
+    if (!ids.length) return;
+    const { error } = await sb.from('bookings').update({ status }).in('id', ids);
     if (error) return pushToast('Mise à jour impossible.');
-    setBookings(bookings.map((b) => (b.id === id ? { ...b, status } : b)));
-    pushToast(status === 'confirmed' ? 'Rendez-vous confirmé.' : 'Rendez-vous refusé : le créneau et le meuble sont libérés.');
+    setBookings((prev) => prev.map((b) => (ids.includes(b.id) ? { ...b, status } : b)));
+    pushToast(status === 'confirmed' ? 'Rendez-vous confirmé.'
+      : rows.length > 1 ? 'Rendez-vous refusé : le créneau et les meubles sont libérés.'
+      : 'Rendez-vous refusé : le créneau et le meuble sont libérés.');
   };
 
   const itemOf = (b) => items.find((i) => String(i.id) === String(b.item_id));
@@ -3766,11 +4360,12 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   const now = new Date();
   const nowKey = `${todayKey()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-  const remove = async (id) => {
-    if (!window.confirm('Supprimer ce rendez-vous ?')) return;
-    const { error } = await sb.from('bookings').delete().eq('id', id);
+  const remove = async (rows) => {
+    if (!window.confirm(rows.length > 1 ? `Supprimer ce rendez-vous (${rows.length} meubles) ?` : 'Supprimer ce rendez-vous ?')) return;
+    const ids = rows.map((b) => b.id);
+    const { error } = await sb.from('bookings').delete().in('id', ids);
     if (error) return pushToast('Suppression impossible.');
-    setBookings(bookings.filter((b) => b.id !== id));
+    setBookings((prev) => prev.filter((b) => !ids.includes(b.id)));
   };
 
   const markAllSeen = async () => {
@@ -3784,11 +4379,87 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   const shown = filter === 'all' ? sorted : sorted.filter((b) => String(b.day).slice(0, 10) >= todayKey());
   const newOnes = bookings.filter((b) => b.status === 'new').length;
 
+  // Les lignes d'un même panier forment un seul rendez-vous.
+  const groups = [];
+  const carts = {};
+  shown.forEach((b) => {
+    if (b.cart_id && carts[b.cart_id]) return carts[b.cart_id].push(b);
+    const rows = [b];
+    if (b.cart_id) carts[b.cart_id] = rows;
+    groups.push(rows);
+  });
+
   const labels = {
     new: ['Nouveau', 'bg-blue-700 text-white'],
     seen: ['Vu', 'bg-slate-100 text-slate-600'],
     confirmed: ['Confirmé', 'bg-blue-50 text-blue-800'],
     declined: ['Refusé', 'bg-slate-100 text-slate-400'],
+  };
+
+  // Sous le rendez-vous, un meuble : vendu, invendu, ou à noter. `titled`
+  // quand il y en a plusieurs, pour savoir duquel on parle.
+  const outcome = (b, titled) => {
+    const item = itemOf(b);
+    const n = sellable(b, item);
+    const past = `${String(b.day).slice(0, 10)} ${b.slot}` <= nowKey;
+    const what = titled && (
+      <span className="block font-semibold text-slate-800">
+        {b.quantity > 1 ? `${b.quantity} × ` : ''}{b.item_title}
+      </span>
+    );
+    let body = null;
+    if (b.outcome === 'sold') {
+      body = (
+        <div className="mt-3 pt-3 border-t border-slate-200 text-sm">
+          {what}
+          <p className="font-semibold text-green-700 flex items-center gap-1.5">
+            <Icon name="check" className="w-4 h-4" /> {saleNote(b, item)}
+          </p>
+        </div>
+      );
+    } else if (b.outcome === 'unsold') {
+      body = (
+        <div className="mt-3 pt-3 border-t border-slate-200 text-sm">
+          {what}
+          <p className="text-slate-500">Invendu · remis en vente</p>
+        </div>
+      );
+    } else if (b.status === 'declined') {
+      body = titled && (
+        <div className="mt-3 pt-3 border-t border-slate-200 text-sm">
+          {what}
+          <p className="text-slate-400">Refusé</p>
+        </div>
+      );
+    } else {
+      body = (
+        <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
+          <span className={`mr-auto text-sm ${past ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>
+            {what}
+            {past ? (titled ? 'Vendu ou invendu ?' : 'Rendez-vous passé : vendu ou invendu ?')
+              : 'outcome' in b ? 'Retiré de la boutique en attendant.' : 'Après le rendez-vous :'}
+          </span>
+          <button onClick={() => (n > 0 ? setSelling(selling === b.id ? null : b.id) : sold(b, item, 0, null))}
+                  aria-expanded={selling === b.id}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold border border-green-600 text-green-700 rounded-lg px-3 py-1.5 hover:bg-green-50">
+            <Icon name="check" className="w-4 h-4" /> Vendu
+          </button>
+          <button onClick={() => unsold(b)}
+                  className="inline-flex items-center gap-1.5 text-sm border border-slate-200 text-slate-600 rounded-lg px-3 py-1.5 hover:border-slate-400">
+            <Icon name="x" className="w-4 h-4" /> Invendu
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div key={b.id}>
+        {body}
+        {selling === b.id && !b.outcome && n > 0 && (
+          <SalePrompt item={item} count={n} onConfirm={(total) => sold(b, item, n, total)}
+                      onCancel={() => setSelling(null)} />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -3808,20 +4479,25 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
         )}
       </div>
 
-      {shown.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="border border-dashed border-blue-200 rounded-xl px-6 py-12 text-center text-slate-600">
           Aucun rendez-vous pour l’instant. Les demandes arrivent ici dès qu’un acheteur réserve un créneau.
         </div>
       ) : (
         <ul className="space-y-3">
-          {shown.map((b) => {
-            const [label, cls] = labels[b.status] || labels.seen;
-            const item = itemOf(b);
-            const n = sellable(b, item);
-            const past = `${String(b.day).slice(0, 10)} ${b.slot}` <= nowKey;
+          {groups.map((rows) => {
+            const b = rows[0];
+            const many = rows.length > 1;
+            const status = rows.some((r) => r.status === 'new') ? 'new' : b.status;
+            const [label, cls] = labels[status] || labels.seen;
+            const open = rows.filter((r) => !r.outcome);
             const tel = phoneInfo(b.phone);
+            const listed = rows.reduce((sum, r) => {
+              const it = itemOf(r);
+              return sum + (it ? priceValue(it.price) * (r.quantity || 1) : 0);
+            }, 0);
             return (
-              <li key={b.id} className={`border rounded-xl px-4 py-4 ${b.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
+              <li key={b.id} className={`border rounded-xl px-4 py-4 ${status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -3829,6 +4505,11 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                         <Icon name="user" className="w-4 h-4 text-blue-700" /> {b.first_name}
                       </span>
                       <span className={`text-xs rounded-full px-2 py-0.5 ${cls}`}>{label}</span>
+                      {many && (
+                        <span className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-100">
+                          <Icon name="bag" className="w-3.5 h-3.5" /> Panier
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1.5 text-sm text-slate-600 flex flex-wrap items-center gap-x-4 gap-y-1">
                       <a href={tel.href} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
@@ -3849,55 +4530,195 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                       )}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Pour : {b.quantity > 1 && <strong className="text-slate-800">{b.quantity} × </strong>}{b.item_title}
+                      {many ? (
+                        <>
+                          Pour : <strong className="text-slate-800">{rows.length} meubles</strong> au même rendez-vous
+                          {listed > 0 && ` · ${fmtKr(listed)} au prix affiché`}
+                        </>
+                      ) : (
+                        <>Pour : {b.quantity > 1 && <strong className="text-slate-800">{b.quantity} × </strong>}{b.item_title}</>
+                      )}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {!b.outcome && b.status !== 'confirmed' && (
-                      <button onClick={() => update(b.id, 'confirmed')}
+                    {open.some((r) => r.status !== 'confirmed') && (
+                      <button onClick={() => update(rows, 'confirmed')}
                               className="inline-flex items-center gap-1.5 text-sm bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-3 py-1.5">
                         <Icon name="check" className="w-4 h-4" /> Confirmer
                       </button>
                     )}
-                    {!b.outcome && b.status !== 'declined' && (
-                      <button onClick={() => update(b.id, 'declined')}
+                    {open.some((r) => r.status !== 'declined') && (
+                      <button onClick={() => update(rows, 'declined')}
                               className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-slate-400">
                         Refuser
                       </button>
                     )}
-                    <button onClick={() => remove(b.id)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
+                    <button onClick={() => remove(rows)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
                       <Icon name="trash" className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                {b.outcome === 'sold' ? (
-                  <p className="mt-3 pt-3 border-t border-slate-200 text-sm font-semibold text-green-700 flex items-center gap-1.5">
-                    <Icon name="check" className="w-4 h-4" /> {saleNote(b, item)}
-                  </p>
-                ) : b.outcome === 'unsold' ? (
-                  <p className="mt-3 pt-3 border-t border-slate-200 text-sm text-slate-500">Invendu · remis en vente</p>
-                ) : b.status !== 'declined' && (
-                  <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap items-center gap-2">
-                    <span className={`mr-auto text-sm ${past ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>
-                      {past ? 'Rendez-vous passé : vendu ou invendu ?'
-                        : 'outcome' in b ? 'Retiré de la boutique en attendant.' : 'Après le rendez-vous :'}
-                    </span>
-                    <button onClick={() => (n > 0 ? setSelling(selling === b.id ? null : b.id) : sold(b, item, 0, null))}
-                            aria-expanded={selling === b.id}
-                            className="inline-flex items-center gap-1.5 text-sm font-semibold border border-green-600 text-green-700 rounded-lg px-3 py-1.5 hover:bg-green-50">
-                      <Icon name="check" className="w-4 h-4" /> Vendu
-                    </button>
-                    <button onClick={() => unsold(b)}
-                            className="inline-flex items-center gap-1.5 text-sm border border-slate-200 text-slate-600 rounded-lg px-3 py-1.5 hover:border-slate-400">
-                      <Icon name="x" className="w-4 h-4" /> Invendu
+                {rows.map((r) => outcome(r, many))}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Les demandes de contact laissées dans la boutique (migration-panier.sql) :
+// rappeler l'acheteur, puis marquer « traité ».
+function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
+  const [filter, setFilter] = useState('open');
+
+  const setStatus = async (m, status) => {
+    const { error } = await sb.from('contact_requests').update({ status }).eq('id', m.id);
+    if (error) return pushToast('Mise à jour impossible.');
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, status } : x)));
+  };
+
+  const remove = async (m) => {
+    if (!window.confirm(`Supprimer le message de ${m.first_name} ?`)) return;
+    const { error } = await sb.from('contact_requests').delete().eq('id', m.id);
+    if (error) return pushToast('Suppression impossible.');
+    setMessages((prev) => prev.filter((x) => x.id !== m.id));
+  };
+
+  const markAllSeen = async () => {
+    const ids = messages.filter((m) => m.status === 'new').map((m) => m.id);
+    if (!ids.length) return;
+    const { error } = await sb.from('contact_requests').update({ status: 'seen' }).in('id', ids);
+    if (error) return pushToast('Mise à jour impossible.');
+    setMessages((prev) => prev.map((m) => (m.status === 'new' ? { ...m, status: 'seen' } : m)));
+  };
+
+  if (missing) {
+    return (
+      <div className="border border-dashed border-amber-300 bg-amber-50 rounded-xl px-6 py-10 text-center text-amber-900">
+        <p className="font-semibold">Les messages ne sont pas encore activés.</p>
+        <p className="mt-1 text-sm leading-relaxed">
+          Lance <code className="bg-white px-1.5 py-0.5 rounded">migration-panier.sql</code> une fois dans Supabase
+          (SQL Editor → New query → Run), puis actualise la page.
+        </p>
+      </div>
+    );
+  }
+
+  const shown = filter === 'open' ? messages.filter((m) => m.status !== 'done') : messages;
+  const newOnes = messages.filter((m) => m.status === 'new').length;
+  const labels = {
+    new: ['Nouveau', 'bg-blue-700 text-white'],
+    seen: ['À rappeler', 'bg-amber-50 text-amber-800 border border-amber-200'],
+    done: ['Traité', 'bg-slate-100 text-slate-500'],
+  };
+  const when = (t) => new Date(t).toLocaleString('fr-FR', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  // Où en est le meuble aujourd'hui, si ça a changé depuis le message.
+  const now = (line) => {
+    const item = items.find((i) => String(i.id) === String(line.id));
+    if (!item) return ' (supprimé)';
+    if (leftQty(item) < 1) return ' (vendu)';
+    return '';
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="flex gap-2">
+          {[['open', 'À traiter'], ['all', 'Tous']].map(([id, label]) => (
+            <button key={id} onClick={() => setFilter(id)}
+                    className={`text-sm rounded-lg px-3 py-1.5 border ${
+                      filter === id ? 'border-blue-700 text-blue-800 bg-blue-50' : 'border-slate-200 text-slate-600'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {newOnes > 0 && (
+          <button onClick={markAllSeen} className="text-sm text-blue-700 hover:underline">Marquer tout comme lu</button>
+        )}
+      </div>
+
+      {shown.length === 0 ? (
+        <div className="border border-dashed border-blue-200 rounded-xl px-6 py-12 text-center text-slate-600">
+          {messages.length ? 'Tout est traité.' : 'Aucun message pour l’instant.'} Les acheteurs laissent leur numéro
+          depuis la boutique (« Contact me » sous un meuble, dans le panier ou en haut de page).
+        </div>
+      ) : (
+        <ul className="space-y-3">
+          {shown.map((m) => {
+            const [label, cls] = labels[m.status] || labels.seen;
+            const tel = phoneInfo(m.phone);
+            const lines = Array.isArray(m.items) ? m.items : [];
+            return (
+              <li key={m.id} className={`border rounded-xl px-4 py-4 ${
+                m.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'} ${m.status === 'done' ? 'opacity-70' : ''}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1.5 font-semibold">
+                        <Icon name="user" className="w-4 h-4 text-blue-700" /> {m.first_name}
+                      </span>
+                      <span className={`text-xs rounded-full px-2 py-0.5 ${cls}`}>{label}</span>
+                    </div>
+                    <p className="mt-1.5 text-sm text-slate-600 flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <a href={tel.href} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
+                        <Icon name="phone" className="w-3.5 h-3.5" />
+                        {tel.country && <span className="text-base leading-none" title={tel.country.name}>{tel.country.flag}</span>}
+                        <span className="whitespace-nowrap tabular-nums">{tel.text}</span>
+                      </a>
+                      <a href={tel.href.replace(/^tel:/, 'sms:')} className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
+                        <Icon name="message" className="w-3.5 h-3.5" /> SMS
+                      </a>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="clock" className="w-3.5 h-3.5" /> {when(m.created_at)}
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {m.status !== 'done' ? (
+                      <button onClick={() => setStatus(m, 'done')}
+                              className="inline-flex items-center gap-1.5 text-sm font-semibold border border-green-600 text-green-700 rounded-lg px-3 py-1.5 hover:bg-green-50">
+                        <Icon name="check" className="w-4 h-4" /> Traité
+                      </button>
+                    ) : (
+                      <button onClick={() => setStatus(m, 'seen')}
+                              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:border-slate-400">
+                        Rouvrir
+                      </button>
+                    )}
+                    <button onClick={() => remove(m)} className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label="Supprimer">
+                      <Icon name="trash" className="w-4 h-4" />
                     </button>
                   </div>
+                </div>
+
+                {lines.length > 0 && (
+                  <ul className="mt-2 text-sm text-slate-600 space-y-0.5">
+                    {lines.map((l, i) => (
+                      <li key={i} className="flex items-center gap-1.5">
+                        <Icon name="bag" className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                        <span>
+                          {l.quantity > 1 && <strong className="text-slate-800">{l.quantity} × </strong>}
+                          {l.title}
+                          <span className="text-slate-400"> · {l.quantity > 1 && priceValue(l.price) > 0 ? fmtKr(priceValue(l.price) * l.quantity) : withKr(l.price) || 'gratuit'}{now(l)}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-                {selling === b.id && !b.outcome && n > 0 && (
-                  <SalePrompt item={item} count={n} onConfirm={(total) => sold(b, item, n, total)}
-                              onCancel={() => setSelling(null)} />
+                {lines.length === 0 && !m.message && (
+                  <p className="mt-2 text-sm text-slate-500">Veut être rappelé, sans message.</p>
+                )}
+                {m.message && (
+                  <p className="mt-3 rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 whitespace-pre-line break-words">
+                    {m.message}
+                  </p>
                 )}
               </li>
             );

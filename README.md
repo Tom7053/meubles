@@ -10,13 +10,14 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `index.html` | dépôt GitHub | toujours — c'est la page et toute l'application, contient tes clés |
 | `.github/workflows/supabase-keepalive.yml` | dépôt GitHub | pour que Supabase ne mette pas le projet en pause (voir « Projet en pause ») |
 | `schema.sql` | Supabase, SQL Editor | une fois, au début |
-| `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée |
+| `notifications.sql` | Supabase, SQL Editor | une fois, si tu veux être alertée. **Si tu l'avais lancé avant le panier, relance-le** (avec ton sujet ntfy ou tes adresses) : une seule alerte par panier, et une alerte pour chaque message |
 | `migration-paiement.sql` | Supabase, SQL Editor | si la base existait avant le choix du paiement, **ou pour accepter Cash** (sans risque à relancer) |
 | `migration-quantite.sql` | Supabase, SQL Editor | une fois, **pour vendre plusieurs exemplaires d'un meuble** (2 lits…) (sans risque à relancer) |
 | `migration-photos.sql` | Supabase, SQL Editor | une fois, **pour mettre plusieurs photos par meuble** et retrouver les choix de la description en rouvrant une annonce (sans risque à relancer) |
 | `migration-stats.sql` | Supabase, SQL Editor | une fois, **pour l'onglet Stats** (visites, scans du QR code, meubles les plus vus). **Si tu l'avais déjà lancé, relance-le** : la nouvelle version permet d'effacer ta propre visite quand tu te connectes (sans risque à relancer) |
 | `migration-prix-vente.sql` | Supabase, SQL Editor | une fois, **pour noter le prix de vente réel** quand tu as négocié (sans risque à relancer) |
 | `migration-reservation.sql` | Supabase, SQL Editor | une fois, **pour qu'un meuble réservé quitte la boutique** et noter vendu / invendu après le rendez-vous (sans risque à relancer) |
+| `migration-panier.sql` | Supabase, SQL Editor | une fois, **pour le panier (un rendez-vous pour plusieurs meubles) et les messages « rappelez-moi »**, après `migration-reservation.sql` (sans risque à relancer) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
@@ -85,7 +86,25 @@ adresse (`https://TON-PSEUDO.github.io/meubles/`) puis **Save**. Sans ça, le li
 
 Ouvre le site, clique sur **Seller access** en bas de page (ou va directement sur
 `https://TON-PSEUDO.github.io/meubles/#vendeur`, à mettre en favori sur ton téléphone),
-connecte-toi avec l'e-mail de l'étape 3. Cinq onglets :
+connecte-toi avec l'e-mail de l'étape 3.
+
+**Côté acheteurs.** Sous chaque meuble : **Book a viewing** (réserver ce meuble
+seul), **Add to cart** et **Contact me**.
+- **Panier** : les meubles ajoutés restent dans le navigateur de l'acheteur (rien
+  n'est réservé tant qu'il n'a pas pris rendez-vous). Une barre en bas de l'écran
+  ouvre le panier : nombre d'exemplaires, total, puis **Book one viewing for all**,
+  un seul rendez-vous pour tout. Seuls sont proposés les jours et heures où *tous*
+  les meubles du panier peuvent partir ; un meuble qui n'a plus aucun créneau est
+  signalé pour qu'il le retire. C'est tout ou rien : si un des meubles vient d'être
+  réservé par quelqu'un d'autre, rien n'est réservé et le panier se met à jour.
+- **Contact me** (sous un meuble, dans le panier, en haut et en bas de la page) :
+  l'acheteur laisse son prénom, son numéro (avec le pays) et un message facultatif.
+  Ça ne réserve rien ; la demande arrive dans l'onglet **Messages**.
+
+Il faut avoir lancé `migration-panier.sql` une fois. Sans lui, réserver un seul
+meuble marche toujours, mais le panier et les messages affichent une erreur.
+
+Six onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
   **Photos** : jusqu'à 8 par meuble, on peut en choisir plusieurs d'un coup. La
@@ -122,6 +141,16 @@ connecte-toi avec l'e-mail de l'étape 3. Cinq onglets :
   Une fois l'heure passée, le rendez-vous affiche en orange « vendu ou invendu ? » :
   tant que tu n'as pas répondu, le meuble reste hors de la boutique.
   Il faut avoir lancé `migration-reservation.sql` une fois.
+  **Panier** : un rendez-vous pris pour plusieurs meubles s'affiche en une seule
+  carte marquée « Panier », avec chaque meuble en dessous. **Confirmer**, **Refuser**
+  et la corbeille valent pour tout le rendez-vous ; **Vendu** / **Invendu** se notent
+  meuble par meuble (il peut repartir avec le lit et laisser la chaise).
+- **Messages** — les acheteurs qui veulent être rappelés : prénom, numéro (appel ou
+  SMS en un clic), les meubles dont ils parlent avec leur prix, et leur message.
+  Un message arrive en « Nouveau » ; **Marquer tout comme lu** le passe en « À
+  rappeler », **Traité** le range (filtre « À traiter » / « Tous »). Un meuble vendu
+  depuis est signalé « (vendu) ». Alerte en direct si l'onglet est ouvert, comme
+  pour les rendez-vous.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
   autres sont cités dessous, sous « Also for sale ». Si tout ne tient pas au-dessus
@@ -195,10 +224,14 @@ avant, et il suffit de réactiver le workflow dans l'onglet Actions.
 ## Notes
 
 **Notifications.** Tant que l'onglet vendeur est ouvert, une alerte s'affiche à la
-seconde où quelqu'un réserve (temps réel Supabase). Pour être prévenue même site fermé,
-lance `notifications.sql` dans le SQL Editor : au choix une notification push sur ton
-téléphone via ntfy (gratuit, sans compte) ou un e-mail via Resend. Tout se passe côté
-base de données, il n'y a rien à changer dans le site.
+seconde où quelqu'un réserve ou laisse un message (temps réel Supabase). Pour être
+prévenue même site fermé, lance `notifications.sql` dans le SQL Editor : au choix une
+notification push sur ton téléphone via ntfy (gratuit, sans compte) ou un e-mail via
+Resend ou Brevo. Un panier de plusieurs meubles ne donne qu'une alerte, avec la liste ;
+chaque message « rappelez-moi » donne la sienne (lance `migration-panier.sql` avant).
+Le sujet ntfy ne se remplace plus qu'à un seul endroit, et tant qu'il n'est pas
+remplacé rien n'est envoyé. Tout se passe côté base de données, il n'y a rien à
+changer dans le site.
 
 **Photos.** Elles sont redimensionnées dans le navigateur puis stockées en base64
 dans la base. Compte environ 100 Ko par photo, très loin des 500 Mo gratuits. Seules
