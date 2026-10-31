@@ -1,7 +1,8 @@
 # Vente de meubles — installation
 
 Site statique hébergé sur GitHub Pages, données sur Supabase.
-Boutique en anglais pour les acheteurs, espace vendeur en français.
+Boutique en anglais pour les acheteurs, espace vendeur en français — chacun
+peut passer en anglais ou en français dans l'onglet **Réglages**.
 
 ## Les fichiers
 
@@ -18,6 +19,8 @@ Boutique en anglais pour les acheteurs, espace vendeur en français.
 | `migration-prix-vente.sql` | Supabase, SQL Editor | une fois, **pour noter le prix de vente réel** quand tu as négocié (sans risque à relancer) |
 | `migration-reservation.sql` | Supabase, SQL Editor | une fois, **pour qu'un meuble réservé quitte la boutique** et noter vendu / invendu après le rendez-vous (sans risque à relancer) |
 | `migration-panier.sql` | Supabase, SQL Editor | une fois, **pour le panier (un rendez-vous pour plusieurs meubles) et les messages « rappelez-moi »**, après `migration-reservation.sql` (sans risque à relancer) |
+| `migration-langue.sql` | Supabase, SQL Editor | une fois, **pour choisir la langue de la boutique** dans l'onglet Réglages (sans risque à relancer) |
+| `verifier-supabase.sql` | Supabase, SQL Editor | quand tu veux : dit ce qui est installé et quel fichier lancer sinon (ne modifie rien) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
 | `affiche.html` | — | **plus nécessaire** : l'affiche se fait maintenant dans l'onglet Affiche de l'espace vendeur |
@@ -104,7 +107,7 @@ seul), **Add to cart** et **Contact me**.
 Il faut avoir lancé `migration-panier.sql` une fois. Sans lui, réserver un seul
 meuble marche toujours, mais le panier et les messages affichent une erreur.
 
-Six onglets :
+Sept onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
   **Photos** : jusqu'à 8 par meuble, on peut en choisir plusieurs d'un coup. La
@@ -112,12 +115,12 @@ Six onglets :
   en change. Les acheteurs touchent la photo pour toutes les voir en glissant du
   doigt. Il faut avoir lancé `migration-photos.sql` une fois, sinon seule la
   couverture est gardée.
-  **Description** : elle s'écrit toute seule en anglais avec le type, la matière,
+  **Description** : elle s'écrit toute seule dans la langue de la boutique (anglais au départ) avec le type, la matière,
   l'état, l'année d'achat, le prix payé neuf (l'économie est calculée), les atouts,
   les défauts, le transport… (pas d'IA, juste des phrases toutes faites). Chaque
   type de meuble a ses propres phrases et chaque annonce reçoit des tournures
   différentes ; **Reformuler** en propose d'autres à chaque clic. Tu peux la
-  retoucher. Le titre (en anglais) se remplit aussi tout seul tant que tu ne l'as
+  retoucher. Le titre (dans la langue de la boutique) se remplit aussi tout seul tant que tu ne l'as
   pas tapé. Les choix sont gardés avec l'annonce (après `migration-photos.sql`).
   Le prix se tape sans « kr », il est ajouté tout seul.
   **Nombre** : pour 2 lits identiques, mets 2 et le prix d'un seul. Les acheteurs
@@ -153,7 +156,7 @@ Six onglets :
   pour les rendez-vous.
 - **Planning** — jours d'ouverture, créneaux horaires, jours fermés, adresse et paiement.
 - **Affiche** — coche les meubles à mettre sur l'affiche avec leur prix ; tous les
-  autres sont cités dessous, sous « Also for sale ». Si tout ne tient pas au-dessus
+  autres sont cités dessous, sous « Also for sale » (« Aussi à vendre » en français). Si tout ne tient pas au-dessus
   du bandeau bleu, le haut de l'affiche rapetisse tout seul (60 % au plus petit) et
   un avertissement orange dit que la liste cochée est trop longue : décoche quelques
   meubles. Clique sur un texte pour le modifier, choisis les paiements affichés en bas
@@ -180,6 +183,23 @@ Six onglets :
   comptent pas : si tu arrives sur la boutique puis te connectes à l'espace vendeur,
   ta visite est effacée, et ce téléphone ou cet ordinateur n'est plus jamais compté,
   même déconnecté. Les essais en local (localhost) ne comptent pas non plus.
+- **Réglages** — deux choix, anglais ou français :
+  - **Langue de la boutique** : tout ce que lisent les acheteurs (liste, panier,
+    réservation, messages, noms des pays, dates) et l'affiche. Les titres et
+    descriptions écrits tout seuls sortent aussi dans cette langue (en français, les
+    phrases s'accordent : « une table blanche », « elle est déjà démontée »). Il faut
+    avoir lancé `migration-langue.sql` une fois ; avant, ce choix est grisé.
+  - **Langue de l'espace vendeur** : ces écrans-ci, pour toi seulement. Elle te suit
+    sur tous tes appareils (après `migration-langue.sql`), et marche déjà sur
+    l'appareil où tu la choisis avant la migration.
+
+  **Ce qui ne se traduit pas tout seul** : les annonces déjà écrites gardent leur
+  titre et leur description. Pour en refaire une dans la nouvelle langue, ouvre-la et
+  clique sur **Reformuler** (le titre suit aussi s'il avait été proposé tout seul ; un
+  texte tapé à la main n'est jamais remplacé). Le texte « Paiement » du Planning et les
+  textes retouchés de l'affiche restent aussi tels quels (« Remettre les textes
+  d'origine » les remet dans la langue de la boutique). Les aperçus de lien (Messenger,
+  Facebook…) montrent toujours le titre anglais du fichier `index.html`.
 
 ---
 
