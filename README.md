@@ -20,6 +20,7 @@ peut passer en anglais ou en français dans l'onglet **Réglages**.
 | `migration-reservation.sql` | Supabase, SQL Editor | une fois, **pour qu'un meuble réservé quitte la boutique** et noter vendu / invendu après le rendez-vous (sans risque à relancer) |
 | `migration-panier.sql` | Supabase, SQL Editor | une fois, **pour le panier (un rendez-vous pour plusieurs meubles) et les messages « rappelez-moi »**, après `migration-reservation.sql` (sans risque à relancer) |
 | `migration-langue.sql` | Supabase, SQL Editor | une fois, **pour choisir la langue de la boutique** dans l'onglet Réglages (sans risque à relancer) |
+| `migration-lots.sql` | Supabase, SQL Editor | une fois, **pour les lots (plusieurs meubles vendus ensemble avec une remise) et « Marquer réservé »**, après `migration-reservation.sql` et `migration-panier.sql` (sans risque à relancer) |
 | `verifier-supabase.sql` | Supabase, SQL Editor | quand tu veux : dit ce qui est installé et quel fichier lancer sinon (ne modifie rien) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
@@ -104,10 +105,16 @@ seul), **Add to cart** et **Contact me**.
   l'acheteur laisse son prénom, son numéro (avec le pays) et un message facultatif.
   Ça ne réserve rien ; la demande arrive dans l'onglet **Messages**.
 
+**Lots.** Au-dessus de la liste, « Lots à prix réduit » montre les lots en cartes
+empilées : les photos de chaque meuble, le prix du lot à côté du prix barré et
+l'économie. **Réserver le lot** prend un seul rendez-vous pour tous ses meubles,
+au prix du lot ; **Me contacter** envoie une question sur le lot. Chaque meuble
+reste aussi en vente seul plus bas.
+
 Il faut avoir lancé `migration-panier.sql` une fois. Sans lui, réserver un seul
 meuble marche toujours, mais le panier et les messages affichent une erreur.
 
-Sept onglets :
+Huit onglets :
 
 - **Annonces** — ajouter, modifier, marquer comme vendu ou supprimer un meuble.
   **Photos** : jusqu'à 8 par meuble, on peut en choisir plusieurs d'un coup. La
@@ -133,6 +140,24 @@ Sept onglets :
   négociations. **−** ou « Remettre en vente » annule la dernière vente. Pour noter un
   autre prix, il faut avoir lancé `migration-prix-vente.sql` une fois ; sans lui, on
   ne peut vendre qu'au prix affiché.
+  **Réservé** : quelqu'un a pris rendez-vous sur Marketplace, DBA… ? « Marquer
+  réservé » retire le meuble de la boutique (pour 2 lits, un clic par lit réservé).
+  Un bandeau orange « Réservé hors boutique » s'affiche sous la ligne, avec
+  **Vendu** (demande le prix, comme « Marquer vendu ») et **Annuler la
+  réservation** si l'acheteur se rétracte : le meuble revient dans la boutique.
+  Il faut avoir lancé `migration-lots.sql` une fois.
+- **Lots** — plusieurs meubles déjà en vente, vendus ensemble avec une remise
+  (lit 400 kr + matelas 300 kr à −20 % : 560 kr). **Créer un lot**, coche les
+  meubles (le premier coché est la carte du dessus ; pour un meuble en plusieurs
+  exemplaires, choisis combien), choisis la remise (aucune, 10, 15, 20, 25, 30 %
+  ou une autre jusqu'à 90 %) et, si tu veux, un titre (sinon « Lit + Matelas »).
+  L'aperçu montre la carte telle que la verront les acheteurs. Les meubles restent
+  aussi en vente un par un ; dès que l'un d'eux est réservé ou vendu, le lot quitte
+  la boutique (la liste dit pourquoi) et revient s'il est remis en vente. Un
+  rendez-vous pris pour un lot s'affiche marqué « Lot −20 % » dans Rendez-vous, et
+  **Vendu** propose le prix du meuble avec la remise. Il faut avoir lancé
+  `migration-lots.sql` une fois, et `migration-prix-vente.sql` pour noter un
+  meuble vendu au prix du lot.
 - **Rendez-vous** — les demandes, avec le numéro cliquable pour rappeler.
   **Meuble réservé** : dès qu'un acheteur prend rendez-vous, le meuble quitte la
   boutique, personne d'autre ne peut le réserver (pour 2 lits, seuls ceux réservés

@@ -100,6 +100,20 @@ cross join lateral (values
                 || ', espace vendeur : ' || coalesce((select to_jsonb(s) ->> 'admin_lang' from public.settings s where s.id = 1), '?')
            else 'MANQUE → lance migration-langue.sql' end),
 
+  (10.6, 'Lots (plusieurs meubles avec une remise)',
+      case when to_regclass('public.bundles') is not null
+            and exists (select 1 from pg_trigger
+                         where tgname = 'fill_booking_bundle'
+                           and tgrelid = 'public.bookings'::regclass)
+           then 'OK' else 'MANQUE → lance migration-lots.sql' end),
+
+  (10.7, 'Marquer réservé (hors boutique)',
+      case when exists (select 1 from information_schema.columns
+                         where table_schema = 'public' and table_name = 'items'
+                           and column_name = 'reserved_qty')
+            and coalesce(pg_get_functiondef(to_regprocedure('public.check_item_free()')), '') like '%reserved_qty%'
+           then 'OK' else 'MANQUE → lance migration-lots.sql' end),
+
   (11, 'Notif push (ntfy) : rendez-vous',
       case
         when not push_on then

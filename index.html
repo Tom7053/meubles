@@ -326,11 +326,23 @@ const priceFor = (raw, count, lang) =>
 // n'est retenu.
 const isPending = (b) => 'outcome' in b && b.status !== 'declined' && !b.outcome;
 
+// Exemplaires promis à quelqu'un qui a pris rendez-vous ailleurs
+// (Marketplace, DBA…), notés « réservé » par le vendeur : ils quittent la
+// boutique jusqu'à « Vendu » ou « Annuler la réservation ». Colonne
+// reserved_qty, migration-lots.sql ; avant, rien n'est réservé.
+const reservedQty = (item) => Math.min(leftQty(item), Math.max(0, parseInt(item.reserved_qty, 10) || 0));
+
 // Exemplaires retenus, par meuble. Les acheteurs ne lisent pas les
 // rendez-vous : la vue booked_items ne leur donne que ces totaux.
 async function fetchHeld() {
   const { data, error } = await sb.from('booked_items').select('item_id, qty');
   return error || !data ? {} : Object.fromEntries(data.map((r) => [r.item_id, r.qty]));
+}
+
+// Les lots, ou null tant que migration-lots.sql n'a pas été lancé.
+async function fetchBundles() {
+  const { data, error } = await sb.from('bundles').select('*').order('created_at', { ascending: false });
+  return error ? null : data || [];
 }
 
 /* ------------------------------- panier ----------------------------- */
@@ -368,6 +380,29 @@ function newCartId() {
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+
+/* -------------------------------- lots ------------------------------ */
+// Plusieurs meubles déjà en vente, vendus ensemble avec une remise (table
+// bundles, migration-lots.sql) : { id, title, items: [{ id, count }],
+// discount } où discount est en %. Les meubles restent aussi en vente un
+// par un ; le lot quitte la boutique dès que l'un d'eux n'est plus libre.
+const MAX_DISCOUNT = 90;
+const bundleEntries = (bundle) => (Array.isArray(bundle && bundle.items) ? bundle.items : [])
+  .filter((e) => e && e.id != null)
+  .map((e) => ({ id: e.id, count: Math.max(1, parseInt(e.count, 10) || 1) }));
+const cleanDiscount = (raw) => Math.max(0, Math.min(MAX_DISCOUNT, parseInt(raw, 10) || 0));
+// Un montant après remise, sans arrondi : les ventes notées gardent le
+// prix exact, l'affichage arrondit à la couronne.
+const afterDiscount = (amount, pct) => (amount * (100 - cleanDiscount(pct))) / 100;
+// Prix d'un lot : ce que coûteraient ses meubles un par un, et le prix du lot.
+const bundlePrices = (lines, pct) => {
+  const full = linesTotal(lines);
+  const price = Math.round(afterDiscount(full, pct));
+  return { full, price, saved: Math.round(full) - price };
+};
+// Le titre proposé : « Lit + Matelas », « 4 × Chaise ».
+const autoBundleTitle = (lines) =>
+  lines.map((l) => `${l.count > 1 ? `${l.count} × ` : ''}${l.item.title}`).join(' + ');
 
 /* ---------------------------- fin de vente -------------------------- */
 // Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
@@ -1010,6 +1045,8 @@ const PATHS = {
   down: 'm6 9 6 6 6-6',
   bag: 'M6 8h12l-1 12H7L6 8zM9 8V7a3 3 0 0 1 6 0v1',
   message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+  layers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
 };
 
 function Icon({ name, className }) {
@@ -1146,6 +1183,9 @@ function App() {
   const [busy, setBusy] = useState([]);
   // Exemplaires retenus par un rendez-vous, par meuble (fetchHeld).
   const [held, setHeld] = useState({});
+  // Lots (migration-lots.sql) ; bundlesMissing tant que la table n'existe pas.
+  const [bundles, setBundles] = useState([]);
+  const [bundlesMissing, setBundlesMissing] = useState(false);
   const [bookings, setBookings] = useState([]);
   // Demandes de contact (migration-panier.sql) ; missing tant que la table
   // n'existe pas.
@@ -1255,17 +1295,20 @@ function App() {
         if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
         setSettingsReady(true);
       }, () => setSettingsReady(true));
-    const [it, , bs, ph, hd] = await Promise.all([
+    const [it, , bs, ph, hd, bu] = await Promise.all([
       sb.from('items').select('*').order('created_at', { ascending: false }),
       settingsLoad,
       sb.from('busy_slots').select('day, slot'),
       // Seulement les nombres, pas les photos.
       sb.from('item_photos').select('item_id, photo_count'),
       fetchHeld(),
+      fetchBundles(),
     ]);
     if (it.data) setItems(it.data);
     if (bs.data) setBusy(bs.data);
     setHeld(hd);
+    setBundles(bu || []);
+    setBundlesMissing(!bu);
     setManyPhotos(!ph.error);
     if (ph.data) setPhotoCounts(Object.fromEntries(ph.data.map((r) => [r.item_id, r.photo_count])));
     extraPhotoCache.clear();
@@ -1273,8 +1316,13 @@ function App() {
     setReady(true);
   }, []);
 
+  // Ce qui est encore libre : meubles retenus par un rendez-vous, et lots
+  // (le vendeur a pu en changer un entre-temps).
   const refreshHeld = useCallback(async () => {
-    if (sb) setHeld(await fetchHeld());
+    if (!sb) return;
+    const [hd, bu] = await Promise.all([fetchHeld(), fetchBundles()]);
+    setHeld(hd);
+    if (bu) setBundles(bu);
   }, []);
 
   const markBusy = (row) => setBusy((prev) => [...prev, { day: row.day, slot: row.slot }]);
@@ -1321,8 +1369,10 @@ function App() {
         setTimeout(() => {
           const n = waiting[b.cart_id];
           delete waiting[b.cart_id];
-          pushToast(tr(`New booking — ${b.first_name}, ${n} item${n > 1 ? 's' : ''}, ${when}`,
-                       `Nouveau rendez-vous — ${b.first_name}, ${n} meuble${n > 1 ? 's' : ''}, ${when}`), 'new');
+          const what = b.bundle_title ? tr(`bundle “${b.bundle_title}”`, `lot « ${b.bundle_title} »`)
+            : tr(`${n} item${n > 1 ? 's' : ''}`, `${n} meuble${n > 1 ? 's' : ''}`);
+          pushToast(tr(`New booking — ${b.first_name}, ${what}, ${when}`,
+                       `Nouveau rendez-vous — ${b.first_name}, ${what}, ${when}`), 'new');
         }, 1500);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'contact_requests' }, (payload) => {
@@ -1364,6 +1414,7 @@ function App() {
         <LangContext.Provider value={shopLang}>
         <Shop
           items={items}
+          bundles={bundles}
           photoCounts={photoCounts}
           settings={settings}
           busy={busy}
@@ -1398,6 +1449,9 @@ function App() {
           }}
           items={items}
           setItems={setItems}
+          bundles={bundles}
+          setBundles={setBundles}
+          bundlesMissing={bundlesMissing}
           manyPhotos={manyPhotos}
           photoCounts={photoCounts}
           setPhotoCounts={setPhotoCounts}
@@ -1504,18 +1558,33 @@ function useOverlay(onClose) {
   }, []);
 }
 
-function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onRetry, onAdmin,
+function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFailed, onRetry, onAdmin,
                 onSlotTaken, onBooked, onItemTaken }) {
   const t = useT();
   // La fenêtre ouverte : { kind: 'cart' }, { kind: 'book', target }, ou
   // { kind: 'contact', target } ; target est un meuble, 'cart' pour tout
-  // le panier, ou null pour une question générale.
+  // le panier, { bundle } pour un lot, ou null pour une question générale.
   const [sheet, setSheet] = useState(null);
   const [photo, setPhoto] = useState(null);
-  // Exemplaires encore libres : ni vendus, ni retenus par un rendez-vous.
-  const freeQty = (item) => Math.max(0, leftQty(item) - (held[item.id] || 0));
+  // Exemplaires encore libres : ni vendus, ni retenus par un rendez-vous,
+  // ni réservés hors boutique.
+  const freeQty = (item) => Math.max(0, leftQty(item) - (held[item.id] || 0) - reservedQty(item));
   const available = items.filter((i) => i.status !== 'sold' && freeQty(i) > 0);
   const photoTotal = (item) => (item.image ? 1 + (photoCounts[item.id] || 0) : 0);
+
+  /* ---- lots ---- */
+  // Les meubles d'un lot tels qu'ils sont maintenant : [{ item, count, left }].
+  // Un meuble supprimé donne une ligne vide (null).
+  const bundleLines = (bundle) => bundleEntries(bundle).map((e) => {
+    const item = items.find((i) => String(i.id) === String(e.id));
+    return item ? { item, count: e.count, left: item.status === 'sold' ? 0 : freeQty(item) } : null;
+  });
+  // En boutique tant que chacun de ses meubles est libre, au moins 2 en tout.
+  const bundleOpen = (lines) =>
+    lines.length > 0 && lines.every((l) => l && l.left >= l.count) && countAll(lines) >= 2;
+  const openBundles = (bundles || [])
+    .map((bundle) => ({ bundle, lines: bundleLines(bundle) }))
+    .filter((b) => bundleOpen(b.lines));
 
   /* ---- panier ---- */
   const [cart, setCart] = useState(loadCart);
@@ -1558,9 +1627,12 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
   const setCartCount = (item, count) =>
     setCart((c) => c.map((e) => (String(e.id) === String(item.id) ? { ...e, count } : e)));
 
-  // Les meubles d'une fenêtre : un seul, tout le panier, ou aucun.
+  // Les meubles d'une fenêtre : un seul, tout le panier, un lot, ou aucun.
+  // Un meuble du lot supprimé entre-temps compte comme parti.
   const linesOf = (target) => (target === 'cart' ? cartLines
+    : target && target.bundle ? bundleLines(target.bundle).map((l, i) => l || { item: { id: `gone-${i}`, title: '' }, count: 1, left: 0 })
     : target ? [{ item: target, count: 1, left: freeQty(target) }] : []);
+  const bundleOf = (target) => (target && target.bundle ? target.bundle : null);
 
   // Prénom et numéro tapés une fois servent aux fenêtres suivantes (gardés
   // le temps de la visite seulement).
@@ -1585,9 +1657,16 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
   const activeTag = SEARCH_TAGS.find((tg) => tg.id === tag) || null;
   const tags = SEARCH_TAGS.filter((tg) => tg === activeTag || available.some((i) => matchesTag(i, tg)));
   const searching = activeTag !== null || query.trim() !== '';
+  const matches = (i) => (activeTag ? matchesTag(i, activeTag) : matchesSearch(i, query));
   const shown = available
-    .filter((i) => (activeTag ? matchesTag(i, activeTag) : matchesSearch(i, query)))
+    .filter(matches)
     .sort((a, b) => (priceValue(b.price) - priceValue(a.price)) * (sort === 'asc' ? -1 : 1));
+  // Un lot reste affiché pendant une recherche si l'un de ses meubles correspond.
+  const shownBundles = openBundles.filter((b) => !searching || b.lines.some((l) => matches(l.item)));
+  const bookBundle = (b) => {
+    b.lines.forEach((l) => track('item_book', l.item.id));
+    setSheet({ kind: 'book', target: { bundle: b.bundle } });
+  };
   const clearSearch = () => { setQuery(''); setTag(null); setSearchOpen(false); };
 
   const steps = [
@@ -1742,6 +1821,24 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
             </button>
           </div>
         ) : (
+          <>
+          {shownBundles.length > 0 && (
+            <section className="mb-10" aria-labelledby="bundles-title">
+              <h3 id="bundles-title" className="display font-bold text-xl">{t('Bundle deals', 'Lots à prix réduit')}</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                {t('Take them together and pay less. Each item is also sold on its own below.',
+                   'Prenez-les ensemble et payez moins cher. Chaque meuble est aussi vendu seul plus bas.')}
+              </p>
+              <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {shownBundles.map((b) => (
+                  <BundleCard key={b.bundle.id} bundle={b.bundle} lines={b.lines}
+                              onBook={() => bookBundle(b)}
+                              onAsk={() => setSheet({ kind: 'contact', target: { bundle: b.bundle } })}
+                              onPhoto={(item) => { track('item_photos', item.id); setPhoto(item); }} />
+                ))}
+              </ul>
+            </section>
+          )}
           <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {shown.map((item) => (
               <ItemCard key={item.id} item={item} left={freeQty(item)} photoTotal={photoTotal(item)}
@@ -1752,6 +1849,7 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
                         onPhoto={() => { track('item_photos', item.id); setPhoto(item); }} />
             ))}
           </ul>
+          </>
         )}
 
         <PickupMap address={settings.address} />
@@ -1810,6 +1908,7 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
       {sheet && sheet.kind === 'book' && (
         <BookingSheet
           lines={linesOf(sheet.target)}
+          bundle={bundleOf(sheet.target)}
           busy={busy}
           settings={settings}
           buyer={buyer}
@@ -1824,7 +1923,8 @@ function Shop({ items, photoCounts, settings, busy, held, ready, loadFailed, onR
       )}
       {sheet && sheet.kind === 'contact' && (
         <ContactSheet
-          lines={linesOf(sheet.target)}
+          lines={linesOf(sheet.target).filter((l) => l.item.title)}
+          bundle={bundleOf(sheet.target)}
           buyer={buyer}
           onBuyer={setBuyer}
           onClose={() => setSheet(null)}
@@ -1974,6 +2074,137 @@ function ItemCard({ item, left, photoTotal, inCart, onBook, onCart, onAsk, onPho
         </div>
       </div>
     </li>
+  );
+}
+
+// « −20 % » en français, « −20% » en anglais.
+const pctText = (pct, lang) => (lang === 'fr' ? `−${pct} %` : `−${pct}%`);
+
+// Un lot dans la boutique : des cartes empilées (une par meuble, la
+// première devant), les photos de ses meubles côte à côte et le prix du
+// lot à côté du prix barré. Toucher une photo ouvre celles de ce meuble.
+// `preview` : aperçu dans l'espace vendeur, les boutons ne font rien.
+function BundleCard({ bundle, lines, onBook, onAsk, onPhoto, preview }) {
+  const t = useT();
+  const pct = cleanDiscount(bundle.discount);
+  const { full, price, saved } = bundlePrices(lines, pct);
+  const n = countAll(lines);
+  const tiles = lines.slice(0, 4).map((l) => l.item);
+  const more = lines.length - tiles.length;
+  // Les cartes du dessous montrent les meubles suivants (ou le même, pour
+  // « 4 × Chaise »).
+  const under = [lines[1] || lines[0], lines[2]].filter(Boolean).map((l) => l.item);
+  const title = (bundle.title || '').trim() || autoBundleTitle(lines);
+
+  const cover = (item) => (item.image
+    ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+    : <span className="w-full h-full flex items-center justify-center text-blue-300"><Icon name="image" className="w-8 h-8" /></span>);
+
+  const tile = (item, i) => {
+    const big = tiles.length === 3 && i === 0;
+    const line = lines[i];
+    return (
+      <button key={`${item.id}-${i}`} type="button" onClick={() => item.image && onPhoto(item)}
+              disabled={!item.image}
+              aria-label={t(`Photos of ${item.title}`, `Photos : ${item.title}`)}
+              className={`relative block min-h-0 overflow-hidden bg-blue-50 ${big ? 'row-span-2' : ''}`}>
+        {cover(item)}
+        {line.count > 1 && (
+          <span className="absolute bottom-2 left-2 text-xs font-bold bg-black/60 text-white rounded-full px-2 py-0.5">×{line.count}</span>
+        )}
+        {more > 0 && i === tiles.length - 1 && (
+          <span className="absolute inset-0 bg-black/50 text-white text-2xl font-bold flex items-center justify-center">+{more}</span>
+        )}
+      </button>
+    );
+  };
+  const grid = tiles.length === 1 ? 'grid-cols-1'
+    : tiles.length === 2 ? 'grid-cols-2'
+    : 'grid-cols-2 grid-rows-2';
+
+  return (
+    <li className="relative">
+      {under.map((item, i) => (
+        <div key={i} aria-hidden="true"
+             className={`absolute inset-0 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden ${
+               i === 0 ? 'rotate-2 translate-x-1' : '-rotate-2 -translate-x-1'}`}>
+          <div className="aspect-[4/3] bg-blue-50">{cover(item)}</div>
+        </div>
+      ))}
+      <div className="relative h-full bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden flex flex-col">
+        <div className="relative aspect-[4/3] bg-white">
+          <div className={`absolute inset-0 grid gap-0.5 ${grid}`}>{tiles.map(tile)}</div>
+          <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-xs font-semibold bg-white text-blue-800 rounded-full px-3 py-1 shadow-sm pointer-events-none">
+            <Icon name="layers" className="w-3.5 h-3.5" /> {t(`Bundle · ${n} items`, `Lot · ${n} meubles`)}
+          </span>
+          {pct > 0 && full > 0 && (
+            <span className="absolute top-3 right-3 text-sm font-bold bg-amber-400 text-amber-950 rounded-full px-3 py-1 shadow-sm pointer-events-none">
+              {pctText(pct, t.lang)}
+            </span>
+          )}
+        </div>
+
+        <div className="p-4 sm:p-5 flex flex-col flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <h4 className="display font-bold text-xl leading-snug">{title}</h4>
+            <span className="shrink-0 text-right">
+              <span className="block display font-bold text-xl text-blue-700 whitespace-nowrap">
+                {full > 0 ? fmtKr(price) : showPrice('', t.lang)}
+              </span>
+              {pct > 0 && full > 0 && <s className="block text-sm text-slate-400 whitespace-nowrap">{fmtKr(full)}</s>}
+            </span>
+          </div>
+          {pct > 0 && saved > 0 && (
+            <p className="mt-1 text-sm font-semibold text-green-700">
+              {t(`You save ${fmtKr(saved)}`, `Vous économisez ${fmtKr(saved)}`)}
+            </p>
+          )}
+
+          <ul className="mt-3 text-sm divide-y divide-slate-100 border-y border-slate-100">
+            {lines.map(({ item, count }) => (
+              <li key={item.id} className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="min-w-0">
+                  {count > 1 && <span className="font-semibold text-blue-800">{count} × </span>}{item.title}
+                  {item.condition && <span className="text-slate-400"> · {conditionText(item.condition, t.lang)}</span>}
+                </span>
+                <span className="shrink-0 text-slate-500 whitespace-nowrap">{priceFor(item.price, count, t.lang)}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-auto pt-4 space-y-2">
+            <button type="button" onClick={preview ? undefined : onBook} className={PRIMARY_BTN}>
+              <Icon name="calendar" className="w-5 h-5" /> {t('Book the bundle', 'Réserver le lot')}
+            </button>
+            <button type="button" onClick={preview ? undefined : onAsk}
+                    className={SECONDARY_BTN + 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:text-blue-800'}>
+              <Icon name="message" className="w-4 h-4 shrink-0" /> {t('Contact me', 'Me contacter')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// Sous la liste des meubles d'un lot (réservation, question) : son prix.
+function BundleSummary({ bundle, lines }) {
+  const t = useT();
+  const pct = cleanDiscount(bundle.discount);
+  const { full, price } = bundlePrices(lines, pct);
+  return (
+    <p className="mt-3 pt-3 border-t border-slate-100 flex items-baseline justify-between gap-3 font-semibold">
+      <span className="inline-flex items-center gap-2">
+        {t('Bundle price', 'Prix du lot')}
+        {pct > 0 && full > 0 && (
+          <span className="text-xs font-bold bg-amber-400 text-amber-950 rounded-full px-2 py-0.5">{pctText(pct, t.lang)}</span>
+        )}
+      </span>
+      <span className="whitespace-nowrap">
+        {pct > 0 && full > 0 && <s className="mr-2 text-sm font-normal text-slate-400">{fmtKr(full)}</s>}
+        <span className="text-blue-700">{full > 0 ? fmtKr(price) : showPrice('', t.lang)}</span>
+      </span>
+    </p>
   );
 }
 
@@ -2412,17 +2643,18 @@ function CartSheet({ lines, notice, busy, settings, onCount, onRemove, onClose, 
   );
 }
 
-// Réservation d'un meuble, ou de tout le panier au même rendez-vous.
-// lines : [{ item, count, left }], `left` = exemplaires ni vendus ni réservés.
-function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken, onBooked, onItemTaken, onContact, onCart }) {
+// Réservation d'un meuble, de tout le panier ou d'un lot (`bundle`) au même
+// rendez-vous. lines : [{ item, count, left }], `left` = exemplaires ni
+// vendus ni réservés. Les nombres d'un lot sont fixes.
+function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, onTaken, onBooked, onItemTaken, onContact, onCart }) {
   const t = useT();
-  const multi = lines.length > 1;
+  const multi = lines.length > 1 || !!bundle;
   const plan = scheduleForAll(lines.map((l) => l.item), settings);
   const taken = new Set(busy.map((b) => `${String(b.day).slice(0, 10)} ${b.slot}`));
   const days = bookableDays(plan, taken);
   // Panier sans créneau commun : les meubles qui n'ont plus aucun créneau
   // à eux seuls, pour dire lequel retirer.
-  const stuck = multi && days.length === 0
+  const stuck = multi && !bundle && days.length === 0
     ? lines.filter((l) => bookableDays(scheduleFor(l.item, settings), taken).length === 0).map((l) => l.item.title)
     : [];
 
@@ -2444,8 +2676,10 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
                         : lines.map((l) => ({ ...l, count }))).filter((l) => l.count > 0);
   const only = lines[0] && lines[0].item;
   const left = lines[0] ? lines[0].left : 0;
-  // Quelqu'un d'autre vient de réserver le dernier exemplaire (ou tout le panier).
-  const gone = !done && (picked.length === 0 || (!multi && left < 1));
+  // Quelqu'un d'autre vient de réserver le dernier exemplaire (ou tout le
+  // panier). Un lot ne se réserve qu'en entier.
+  const gone = !done && (picked.length === 0 || (!multi && left < 1)
+    || (!!bundle && lines.some((l) => l.left < l.count)));
   const bodyRef = useRef(null);
   const timesRef = useRef(null);
   useOverlay(onClose);
@@ -2499,6 +2733,8 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
       // même si migration-quantite.sql ou migration-panier.sql manquent.
       ...(l.count > 1 ? { quantity: l.count } : {}),
       ...(cartId ? { cart_id: cartId } : {}),
+      // Le titre et la remise du lot sont recopiés par la base (migration-lots.sql).
+      ...(bundle ? { bundle_id: bundle.id } : {}),
     }));
     // Tout ou rien : si un seul meuble est déjà pris, rien n'est réservé.
     const { error: err } = await sb.from('bookings').insert(rows);
@@ -2512,9 +2748,18 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
     // item_taken = quelqu'un d'autre vient de réserver un de ces meubles
     // (migration-reservation.sql). La liste est relue : ce qui n'est plus
     // libre sort du panier, et la fenêtre le dit s'il ne reste rien.
+    if (err && err.message === 'bundle_gone') {
+      onItemTaken();
+      return setError(t('Sorry, this bundle has just been changed. Close this window and have another look.',
+                        'Désolé, ce lot vient d’être modifié. Fermez cette fenêtre et jetez un nouvel œil.'));
+    }
     if (err && err.message === 'item_taken') {
       setCount(1);
       onItemTaken();
+      if (bundle) {
+        return setError(t('Sorry, someone else just booked one of these items: the bundle is no longer available.',
+                          'Désolé, quelqu’un d’autre vient de réserver un de ces meubles : le lot n’est plus disponible.'));
+      }
       return setError(multi
         ? t('Sorry, someone else just booked one of these items. Your cart is updated: check it and try again.',
             'Désolé, quelqu’un d’autre vient de réserver un de ces meubles. Votre panier est à jour : vérifiez-le et réessayez.')
@@ -2559,6 +2804,8 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
         <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-center text-slate-600">
           <p>
             {!multi ? t('Sorry, there are no free times left for this item.', 'Désolé, il n’y a plus de créneau libre pour ce meuble.')
+              : bundle ? t('Sorry, there is no time left when the whole bundle can be picked up.',
+                           'Désolé, il n’y a plus de créneau où retirer tout le lot.')
               : stuck.length ? t(`Sorry, there are no free times left for ${stuck.join(' and ')}. Remove ${stuck.length > 1 ? 'them' : 'it'} from your cart to book the rest.`,
                                  `Désolé, il n’y a plus de créneau libre pour ${stuck.join(' et ')}. Retirez-${stuck.length > 1 ? 'les' : 'le'} du panier pour réserver le reste.`)
               : t('Sorry, there is no time when all these items can be picked up together. Try booking them one by one.',
@@ -2673,8 +2920,17 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
     </div>
   );
 
-  // En tête de fenêtre : le meuble, ou tous ceux du panier avec le total.
-  const summary = multi ? (
+  // En tête de fenêtre : le meuble, ou tous ceux du panier avec le total,
+  // ou ceux du lot avec son prix.
+  const summary = bundle ? (
+    <div className="pb-5 mb-5 border-b border-slate-100">
+      <p className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-800">
+        <Icon name="layers" className="w-4 h-4" /> {t('Bundle', 'Lot')} · {itemsText(countAll(picked))} · {t('one visit', 'une visite')}
+      </p>
+      <LinesList lines={picked} />
+      <BundleSummary bundle={bundle} lines={picked} />
+    </div>
+  ) : multi ? (
     <div className="pb-5 mb-5 border-b border-slate-100">
       <LinesList lines={picked} />
       <p className="mt-3 pt-3 border-t border-slate-100 flex items-baseline justify-between gap-3 font-semibold">
@@ -2697,7 +2953,8 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
   const q = encodeURIComponent(settings.address || '');
   const doneView = done && (() => {
     const r = done.rows[0];
-    const one = done.lines.length === 1 ? done.lines[0] : null;
+    const one = !bundle && done.lines.length === 1 ? done.lines[0] : null;
+    const pct = bundle ? cleanDiscount(bundle.discount) : 0;
     return (
       <div className="px-5 py-8">
         <div className="text-center">
@@ -2724,6 +2981,7 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
           {!one && (
             <li className="px-4 py-3">
               <LinesList lines={done.lines} />
+              {bundle && <BundleSummary bundle={bundle} lines={done.lines} />}
             </li>
           )}
           {settings.address && (
@@ -2740,7 +2998,11 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
             <li className="flex items-start gap-3 px-4 py-3">
               <Icon name="card" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" />
               <span>
-                <span className="block font-semibold">{one ? priceFor(one.item.price, one.count, t.lang) : showTotal(done.lines, t.lang)}</span>
+                <span className="block font-semibold">
+                  {one ? priceFor(one.item.price, one.count, t.lang)
+                    : bundle && linesTotal(done.lines) > 0 ? `${fmtKr(bundlePrices(done.lines, pct).price)}${pct ? ` (${pctText(pct, t.lang)})` : ''}`
+                    : showTotal(done.lines, t.lang)}
+                </span>
                 <span className="block text-sm text-slate-500">
                   {t('Pay on pickup by', 'Paiement au retrait :')} {paymentLabel(r.payment, t.lang)}
                 </span>
@@ -2759,7 +3021,10 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
     <div className="px-5 py-14 text-center">
       <h3 className="display font-bold text-2xl">{t('Just booked by someone else', 'Quelqu’un vient de le réserver')}</h3>
       <p className="mt-2 text-slate-600 leading-relaxed">
-        {multi || !only
+        {bundle
+          ? t('Sorry, one of the items in this bundle is no longer available, so the bundle is off. The other items can still be booked one by one.',
+              'Désolé, un des meubles de ce lot n’est plus disponible, le lot n’est donc plus proposé. Les autres meubles se réservent encore un par un.')
+          : multi || !only
           ? t('Sorry, these items are no longer available. Have a look at the other items.',
               'Désolé, ces meubles ne sont plus disponibles. Jetez un œil aux autres meubles.')
           : t(`Sorry, ${only.title} is no longer available. Have a look at the other items.`,
@@ -2814,7 +3079,7 @@ function BookingSheet({ lines, busy, settings, buyer, onBuyer, onClose, onTaken,
 // « Rappelez-moi » : prénom, numéro et un message, sur un meuble, sur le
 // panier ou en général (lines vide). Rien n'est réservé ; la demande arrive
 // dans l'onglet Messages de l'espace vendeur (migration-panier.sql).
-function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
+function ContactSheet({ lines, bundle, buyer, onBuyer, onClose, onBook }) {
   const t = useT();
   // Les meubles tels qu'à l'ouverture : la demande garde sa liste même si
   // l'un d'eux part entre-temps.
@@ -2841,7 +3106,12 @@ function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
       first_name: firstName.trim(),
       phone: fullPhone(phoneField.tel),
       message: message.trim().slice(0, 1000) || null,
-      items: list.map(({ item, count }) => ({ id: item.id, title: item.title, price: item.price || null, quantity: count })),
+      // Une question sur un lot : chaque meuble porte le titre et la remise
+      // du lot, l'onglet Messages affiche son prix.
+      items: list.map(({ item, count }) => ({
+        id: item.id, title: item.title, price: item.price || null, quantity: count,
+        ...(bundle ? { bundle: (bundle.title || '').trim() || autoBundleTitle(list), discount: cleanDiscount(bundle.discount) } : {}),
+      })),
     };
     const { error: err } = await sb.from('contact_requests').insert(row);
     setSending(false);
@@ -2855,8 +3125,11 @@ function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
 
   const about = list.length > 0 && (
     <div className="rounded-2xl border border-slate-200 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">{t('About', 'Concerne')}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+        {bundle ? t('About the bundle', 'Concerne le lot') : t('About', 'Concerne')}
+      </p>
       <LinesList lines={list} />
+      {bundle && <BundleSummary bundle={bundle} lines={list} />}
     </div>
   );
 
@@ -2952,7 +3225,8 @@ function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
 
   return (
     <Sheet label={t('Contact the seller', 'Contacter le vendeur')} title={done ? t('Message sent', 'Message envoyé') : t('Contact me', 'Me contacter')}
-           sub={!done && list.length ? (many ? t(`About ${list.length} items`, `À propos de ${list.length} meubles`) : list[0].item.title) : null}
+           sub={!done && list.length ? (bundle ? (bundle.title || '').trim() || autoBundleTitle(list)
+             : many ? t(`About ${list.length} items`, `À propos de ${list.length} meubles`) : list[0].item.title) : null}
            onClose={onClose}
            overlay={phoneField.picking && !done && (
              <CountryPicker value={phoneField.country} onPick={(iso) => { phoneField.pick(iso); setError(''); }}
@@ -2968,7 +3242,7 @@ function ContactSheet({ lines, buyer, onBuyer, onClose, onBook }) {
 /* ================ ESPACE VENDEUR (en français ou en anglais) ============== */
 
 function Admin({ session, authReady, recovering, linkProblem, onRecovered,
-                 items, setItems, manyPhotos, photoCounts, setPhotoCounts,
+                 items, setItems, bundles, setBundles, bundlesMissing, manyPhotos, photoCounts, setPhotoCounts,
                  bookings, setBookings, messages, setMessages, messagesMissing, settings, setSettings,
                  shopLang, adminLang, onAdminLang, newCount, newMessages, reload, pushToast, onShop }) {
   const t = useT();
@@ -3005,6 +3279,7 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
         </div>
         <div className="max-w-5xl mx-auto px-2 sm:px-5 flex sm:gap-1 overflow-x-auto no-scrollbar">
           {[['annonces', t('Listings', 'Annonces'), items.filter((i) => i.status !== 'sold').length],
+            ['lots', t('Bundles', 'Lots'), bundles.length],
             ['rdv', t('Bookings', 'Rendez-vous'), newCount],
             ['messages', t('Messages', 'Messages'), newMessages],
             ['planning', t('Schedule', 'Planning'), 0],
@@ -3027,8 +3302,12 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
 
       <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8 print:p-0 print:max-w-none">
         {tab === 'annonces' && (
-          <ItemsPanel items={items} setItems={setItems} manyPhotos={manyPhotos} bookings={bookings}
+          <ItemsPanel items={items} setItems={setItems} bundles={bundles} manyPhotos={manyPhotos} bookings={bookings}
                       photoCounts={photoCounts} setPhotoCounts={setPhotoCounts} pushToast={pushToast} />
+        )}
+        {tab === 'lots' && (
+          <BundlesPanel items={items} bookings={bookings} bundles={bundles} setBundles={setBundles}
+                        missing={bundlesMissing} pushToast={pushToast} />
         )}
         {tab === 'rdv' && (
           <BookingsPanel bookings={bookings} setBookings={setBookings}
@@ -3984,8 +4263,9 @@ function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
 // `prices` : prix en kr de ceux qui viennent de partir, un par exemplaire
 // (le prix affiché pour ceux qui manquent). Tout vendu : l'annonce quitte
 // la boutique. null si un prix négocié ne peut pas être gardé, faute
-// d'avoir lancé migration-prix-vente.sql.
-function soldPatch(item, n, prices = []) {
+// d'avoir lancé migration-prix-vente.sql. `unreserve` : combien de ceux qui
+// partent étaient réservés hors boutique (« Vendu » sous la réservation).
+function soldPatch(item, n, prices = [], unreserve = 0) {
   const total = totalQty(item);
   const sold_qty = Math.max(0, Math.min(total, n));
   const status = sold_qty >= total ? 'sold' : 'available';
@@ -4001,6 +4281,10 @@ function soldPatch(item, n, prices = []) {
       ? [...noted, ...Array.from({ length: added }, (_, i) => (i < prices.length ? prices[i] : listed))]
       : noted.slice(0, sold_qty);
   } else if (prices.some((p) => p !== listed)) return null;
+  // Jamais plus d'exemplaires réservés qu'il n'en reste (migration-lots.sql).
+  if ('reserved_qty' in item) {
+    patch.reserved_qty = Math.max(0, Math.min(total - sold_qty, reservedQty(item) - unreserve));
+  }
   return patch;
 }
 
@@ -4008,10 +4292,12 @@ function soldPatch(item, n, prices = []) {
 // affiché, ou au prix obtenu après négociation. `count` exemplaires
 // partent ensemble (rendez-vous pour 2 lits) : le montant est pour tous.
 // `onConfirm` reçoit le montant en kr et renvoie true si la vente est
-// enregistrée.
-function SalePrompt({ item, count = 1, onConfirm, onCancel }) {
+// enregistrée. `discount` : remise du lot en %, pour un meuble vendu en lot.
+function SalePrompt({ item, count = 1, discount = 0, onConfirm, onCancel }) {
   const t = useT();
-  const listed = priceValue(item.price) * count;
+  const pct = cleanDiscount(discount);
+  const listed = afterDiscount(priceValue(item.price) * count, pct);
+  const detailed = (count > 1 || pct > 0) && listed > 0;
   const canHaggle = 'sale_prices' in item;
   const [other, setOther] = useState(false);
   const [price, setPrice] = useState('');
@@ -4037,9 +4323,13 @@ function SalePrompt({ item, count = 1, onConfirm, onCancel }) {
       <label className="mt-2 flex items-center gap-2 cursor-pointer">
         <input type="radio" checked={!other} onChange={() => setOther(false)} className="w-4 h-4 accent-blue-700" />
         <span>
-          {t('At the listed price:', 'Au prix affiché :')}{' '}
-          <strong>{count > 1 && listed > 0 ? fmtKr(listed) : withKr(item.price) || t('free', 'gratuit')}</strong>
-          {count > 1 && listed > 0 && <span className="text-slate-500"> ({count} × {withKr(item.price)})</span>}
+          {pct > 0 ? t('At the bundle price:', 'Au prix du lot :') : t('At the listed price:', 'Au prix affiché :')}{' '}
+          <strong>{detailed ? fmtKr(listed) : withKr(item.price) || t('free', 'gratuit')}</strong>
+          {detailed && (
+            <span className="text-slate-500">
+              {' '}({count > 1 ? `${count} × ` : ''}{withKr(item.price)}{pct > 0 ? `, ${pctText(pct, t.lang)}` : ''})
+            </span>
+          )}
         </span>
       </label>
       <div className={`mt-2 flex flex-wrap items-center gap-2 ${canHaggle ? '' : 'text-slate-400'}`}>
@@ -4052,7 +4342,7 @@ function SalePrompt({ item, count = 1, onConfirm, onCancel }) {
         <span className="flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
           <input value={price} disabled={!canHaggle} onFocus={() => setOther(true)}
                  onChange={(e) => { setPrice(e.target.value); setOther(true); }}
-                 inputMode="decimal" placeholder={listed ? String(listed) : '0'}
+                 inputMode="decimal" placeholder={listed ? String(Math.round(listed)) : '0'}
                  aria-label={t('Haggled sale price', 'Prix de vente négocié')}
                  className="w-20 rounded-lg px-2 py-1.5 bg-transparent outline-none" />
           <span className="pr-2 text-slate-500">kr</span>
@@ -4176,13 +4466,22 @@ function soldNote(item, t) {
 }
 
 // Sous un rendez-vous vendu : « Vendu 400 kr (affiché 450 kr) ».
+// Vendu dans un lot : comparé au prix du lot.
 function saleNote(b, item, t) {
   if (b.sale_price == null) return t('Sold', 'Vendu');
   const got = Number(b.sale_price);
-  const listed = item ? priceValue(item.price) * (b.quantity || 1) : got;
+  const pct = cleanDiscount(b.bundle_discount);
+  const listed = item ? afterDiscount(priceValue(item.price) * (b.quantity || 1), pct) : got;
   if (!got && !listed) return t('Given away', 'Donné');
-  return `${t('Sold', 'Vendu')} ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (${t('listed', 'affiché')} ${fmtKr(listed)})` : ''}`;
+  const ref = pct > 0 ? t('bundle price', 'prix du lot') : t('listed', 'affiché');
+  return `${t('Sold', 'Vendu')} ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (${ref} ${fmtKr(listed)})` : ''}`;
 }
+
+// Exemplaires d'un meuble retenus par un rendez-vous de la boutique pas
+// encore noté vendu ou invendu.
+const heldQty = (item, bookings) => bookings
+  .filter((b) => String(b.item_id) === String(item.id) && isPending(b))
+  .reduce((n, b) => n + (b.quantity || 1), 0);
 
 // Pourquoi un meuble en vente n'est plus dans la boutique :
 // « réservé par Marie, rdv le 02/11 à 14:00 ».
@@ -4199,7 +4498,7 @@ function heldNote(item, bookings, t) {
     : t(`held by ${names}, viewing on ${date} at ${b.slot}`, `réservé par ${names}, rdv le ${date} à ${b.slot}`);
 }
 
-function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPhotoCounts, pushToast }) {
+function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCounts, setPhotoCounts, pushToast }) {
   const t = useT();
   // Titres et descriptions s'écrivent dans la langue des acheteurs.
   const shopLang = useShopLang();
@@ -4207,7 +4506,8 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
   const [form, setForm] = useState(emptyForm);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Meuble dont on est en train de noter la vente (encadré « à quel prix ? »).
+  // Meuble dont on est en train de noter la vente (encadré « à quel prix ? ») :
+  // son id, ou `r` + son id pour « Vendu » sous la réservation.
   const [selling, setSelling] = useState(null);
   // Meuble dont les photos sont ouvertes pour les télécharger.
   const [photosOf, setPhotosOf] = useState(null);
@@ -4350,8 +4650,13 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
       : form.id ? t('Listing updated.', 'Annonce mise à jour.') : t('Listing published.', 'Annonce publiée.'));
   };
 
+  // Les lots dont ce meuble fait partie.
+  const bundlesOf = (item) => (bundles || []).filter((b) => bundleEntries(b).some((e) => String(e.id) === String(item.id)));
+
   const remove = async (item) => {
-    if (!window.confirm(t(`Delete “${item.title}”? This cannot be undone.`, `Supprimer « ${item.title} » ? Cette action est définitive.`))) return;
+    const lots = bundlesOf(item).map((b) => t(`“${b.title}”`, `« ${b.title} »`)).join(', ');
+    const inLots = lots ? t(` It is in the bundle ${lots}, which will no longer be offered.`, ` Il fait partie du lot ${lots}, qui ne sera plus proposé.`) : '';
+    if (!window.confirm(t(`Delete “${item.title}”? This cannot be undone.${inLots}`, `Supprimer « ${item.title} » ? Cette action est définitive.${inLots}`))) return;
     const { error } = await sb.from('items').delete().eq('id', item.id);
     if (error) return pushToast(t('Could not delete.', 'Suppression impossible.'));
     setItems(items.filter((i) => i.id !== item.id));
@@ -4360,13 +4665,14 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
 
   // Combien d'exemplaires sont partis, et à quel prix (`salePrice`, en kr)
   // pour celui qui vient de partir. Tout vendu : l'annonce quitte la
-  // boutique. Renvoie true si c'est enregistré.
-  const setSold = async (item, n, salePrice) => {
+  // boutique. `unreserve` : il était réservé hors boutique. Renvoie true
+  // si c'est enregistré.
+  const setSold = async (item, n, salePrice, unreserve = 0) => {
     const total = totalQty(item);
     const sold_qty = Math.max(0, Math.min(total, n));
     const listed = priceValue(item.price);
     const haggled = salePrice != null && salePrice !== listed;
-    const patch = soldPatch(item, sold_qty, haggled ? [salePrice] : []);
+    const patch = soldPatch(item, sold_qty, haggled ? [salePrice] : [], unreserve);
     if (!patch) {
       pushToast(t('To note a haggled price, first run migration-prix-vente.sql in Supabase (SQL Editor).',
                   'Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).'));
@@ -4386,6 +4692,41 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
     else if (total > 1) pushToast(left);
     else pushToast(t('Back on sale.', 'Remise en vente.'));
     return true;
+  };
+
+  // Réservé hors boutique : quelqu'un a pris rendez-vous sur Marketplace,
+  // DBA… Le meuble (ou `n` exemplaires) quitte la boutique jusqu'à
+  // « Vendu » ou « Annuler la réservation ». Renvoie true si c'est enregistré.
+  const setReserved = async (item, n) => {
+    if (!('reserved_qty' in item)) {
+      pushToast(t('To mark an item as reserved, first run migration-lots.sql in Supabase (SQL Editor).',
+                  'Pour marquer un meuble réservé, lance d’abord migration-lots.sql dans Supabase (SQL Editor).'));
+      return false;
+    }
+    const total = totalQty(item);
+    const reserved_qty = Math.max(0, Math.min(leftQty(item), n));
+    const { error } = await sb.from('items').update({ reserved_qty }).eq('id', item.id);
+    if (error) {
+      pushToast(t('Could not update.', 'Mise à jour impossible.'));
+      return false;
+    }
+    setItems(items.map((i) => (i.id === item.id ? { ...i, reserved_qty } : i)));
+    if (reserved_qty < reservedQty(item)) {
+      pushToast(t(`Reservation cancelled: “${item.title}” is back in the shop.`, `Réservation annulée : « ${item.title} » est de nouveau dans la boutique.`));
+    } else if (total > 1) {
+      pushToast(t(`${reserved_qty} of ${total} reserved: out of the shop until you mark them sold or cancel.`,
+                  `${reserved_qty} sur ${total} réservé${reserved_qty > 1 ? 's' : ''} : retiré${reserved_qty > 1 ? 's' : ''} de la boutique jusqu’à « Vendu » ou « Annuler ».`));
+    } else {
+      pushToast(t('Reserved: out of the shop until you mark it sold or cancel the reservation.',
+                  'Réservé : retiré de la boutique jusqu’à « Vendu » ou « Annuler la réservation ».'));
+    }
+    return true;
+  };
+
+  const cancelReserved = (item) => {
+    if (!window.confirm(t(`The buyer pulled out? “${item.title}” goes back in the shop.`,
+                          `L’acheteur s’est rétracté ? « ${item.title} » revient dans la boutique.`))) return;
+    setReserved(item, reservedQty(item) - 1);
   };
 
   // Les photos de tous les meubles encore en vente dans un seul .zip, un
@@ -4719,6 +5060,11 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
                     <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
                     <span className="text-blue-700 text-sm">{withKr(item.price)}</span>
                     {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{t('Sold', 'Vendu')}</span>}
+                    {item.status !== 'sold' && reservedQty(item) > 0 && (
+                      <span className="text-xs bg-amber-100 text-amber-900 rounded-full px-2 py-0.5">
+                        {totalQty(item) > 1 ? t(`${reservedQty(item)} reserved`, `${reservedQty(item)} réservé${reservedQty(item) > 1 ? 's' : ''}`) : t('Reserved', 'Réservé')}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1 truncate">
                     {[
@@ -4731,13 +5077,24 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
                         ? `${t('until', 'jusqu’au')} ${String(item.available_to).slice(8, 10)}/${String(item.available_to).slice(5, 7)}`
                         : null,
                       item.custom_schedule ? t('own schedule', 'horaires propres') : null,
+                      bundlesOf(item).length > 1 ? t(`in ${bundlesOf(item).length} bundles`, `dans ${bundlesOf(item).length} lots`)
+                        : bundlesOf(item).length ? t('in a bundle', 'dans un lot') : null,
                       photoCounts[item.id] ? `${photoCounts[item.id] + 1} photos` : null,
                       Array.isArray(item.links) && item.links.length ? item.links.map((l) => l.label).join(', ') : null,
                     ].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 {/* sur téléphone, les boutons passent sous la ligne */}
-                <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
+                <div className="flex flex-wrap items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
+                  {item.status !== 'sold' && leftQty(item) - reservedQty(item) - heldQty(item, bookings) > 0 && (
+                    <button onClick={() => setReserved(item, reservedQty(item) + 1)}
+                            title={t('Someone booked it on another site (Marketplace, DBA…): it leaves the shop',
+                                     'Quelqu’un l’a réservé sur un autre site (Marketplace, DBA…) : il quitte la boutique')}
+                            className="inline-flex items-center gap-1 text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-amber-400 hover:text-amber-800">
+                      <Icon name="bookmark" className="w-3.5 h-3.5" />
+                      {totalQty(item) > 1 && reservedQty(item) > 0 ? t('Reserve 1 more', 'Réserver 1 de plus') : t('Mark as reserved', 'Marquer réservé')}
+                    </button>
+                  )}
                   {totalQty(item) > 1 ? (
                     <span className="inline-flex items-center border border-slate-200 rounded-lg text-xs">
                       <button onClick={() => setSold(item, soldQty(item) - 1)} disabled={soldQty(item) === 0}
@@ -4755,7 +5112,7 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
                             className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
                       {t('Put back on sale', 'Remettre en vente')}
                     </button>
-                  ) : (
+                  ) : reservedQty(item) > 0 ? null : (
                     <button onClick={() => setSelling(selling === item.id ? null : item.id)} aria-expanded={selling === item.id}
                             className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 hover:border-blue-400 hover:text-blue-700">
                       {t('Mark as sold', 'Marquer vendu')}
@@ -4778,6 +5135,33 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
                   </button>
                 </div>
               </div>
+              {item.status !== 'sold' && reservedQty(item) > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 rounded-xl px-4 py-2.5 text-sm">
+                  <span className="mr-auto inline-flex items-start gap-1.5 text-amber-900">
+                    <Icon name="bookmark" className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>
+                      <strong>
+                        {totalQty(item) > 1
+                          ? t(`${reservedQty(item)} of ${totalQty(item)} reserved elsewhere`, `${reservedQty(item)} sur ${totalQty(item)} réservé${reservedQty(item) > 1 ? 's' : ''} hors boutique`)
+                          : t('Reserved elsewhere', 'Réservé hors boutique')}
+                      </strong>
+                      {' · '}{t('out of the shop until the buyer comes', 'retiré de la boutique en attendant l’acheteur')}
+                    </span>
+                  </span>
+                  <button onClick={() => setSelling(selling === `r${item.id}` ? null : `r${item.id}`)} aria-expanded={selling === `r${item.id}`}
+                          className="inline-flex items-center gap-1.5 font-semibold border border-green-600 text-green-700 bg-white rounded-lg px-3 py-1.5 hover:bg-green-50">
+                    <Icon name="check" className="w-4 h-4" /> {t('Sold', 'Vendu')}
+                  </button>
+                  <button onClick={() => cancelReserved(item)}
+                          className="inline-flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 rounded-lg px-3 py-1.5 hover:border-slate-400">
+                    <Icon name="x" className="w-4 h-4" /> {t('Cancel the reservation', 'Annuler la réservation')}
+                  </button>
+                </div>
+              )}
+              {selling === `r${item.id}` && reservedQty(item) > 0 && (
+                <SalePrompt item={item} onConfirm={(price) => setSold(item, soldQty(item) + 1, price, 1)}
+                            onCancel={() => setSelling(null)} />
+              )}
               {selling === item.id && leftQty(item) > 0 && (
                 <SalePrompt item={item} onConfirm={(price) => setSold(item, soldQty(item) + 1, price)}
                             onCancel={() => setSelling(null)} />
@@ -4788,6 +5172,315 @@ function ItemsPanel({ items, setItems, manyPhotos, bookings, photoCounts, setPho
               )}
             </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Onglet Lots : plusieurs meubles déjà en vente, vendus ensemble avec une
+// remise (migration-lots.sql). Dans la boutique, un lot s'affiche en cartes
+// empilées au-dessus des meubles ; chacun d'eux reste aussi en vente seul.
+const DISCOUNT_CHOICES = [0, 10, 15, 20, 25, 30];
+
+function BundlesPanel({ items, bookings, bundles, setBundles, missing, pushToast }) {
+  const t = useT();
+  // Le titre s'écrit dans la langue des acheteurs.
+  const shopLang = useShopLang();
+  const inShopLang = shopLang === 'fr' ? t('in French', 'en français') : t('in English', 'en anglais');
+  // Le lot ouvert : { id, title, entries: [{ id, count }], discount }, ou null.
+  const [form, setForm] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const findItem = (id) => items.find((i) => String(i.id) === String(id));
+  const linesOf = (entries) => entries
+    .map((e) => { const item = findItem(e.id); return item && { item, count: e.count }; })
+    .filter(Boolean);
+  // Exemplaires qu'un lot peut proposer : ni vendus, ni réservés hors
+  // boutique, ni retenus par un rendez-vous.
+  const freeOf = (item) => (item.status === 'sold' ? 0
+    : Math.max(0, leftQty(item) - reservedQty(item) - heldQty(item, bookings)));
+  // Pourquoi un meuble empêche le lot d'être dans la boutique, ou null.
+  const problem = (e) => {
+    const item = findItem(e.id);
+    if (!item) return t('an item was deleted', 'un meuble a été supprimé');
+    if (item.status === 'sold' || leftQty(item) < e.count) return t(`${item.title} sold`, `${item.title} vendu`);
+    if (freeOf(item) >= e.count) return null;
+    return reservedQty(item) > 0 ? t(`${item.title} reserved elsewhere`, `${item.title} réservé hors boutique`)
+                                 : t(`${item.title} held by a booking`, `${item.title} réservé par un rendez-vous`);
+  };
+
+  const openForm = (bundle) => {
+    const entries = bundle ? bundleEntries(bundle) : [];
+    // Un titre proposé tout seul reste vide : il suit les meubles choisis.
+    const title = bundle && bundle.title !== autoBundleTitle(linesOf(entries)) ? bundle.title : '';
+    setForm({ id: bundle ? bundle.id : null, title, entries, discount: bundle ? cleanDiscount(bundle.discount) : 20 });
+  };
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const isOn = (item) => form.entries.some((e) => String(e.id) === String(item.id));
+  const toggle = (item) => setForm((f) => ({
+    ...f,
+    entries: f.entries.some((e) => String(e.id) === String(item.id))
+      ? f.entries.filter((e) => String(e.id) !== String(item.id))
+      : [...f.entries, { id: item.id, count: 1 }],
+  }));
+  const setCount = (item, count) => setForm((f) => ({
+    ...f,
+    entries: f.entries.map((e) => (String(e.id) === String(item.id) ? { ...e, count } : e)),
+  }));
+
+  const save = async () => {
+    const lines = linesOf(form.entries);
+    if (countAll(lines) < 2) return pushToast(t('Pick at least 2 items for a bundle.', 'Choisis au moins 2 meubles pour faire un lot.'));
+    const payload = {
+      title: (form.title.trim() || autoBundleTitle(lines)).slice(0, 160),
+      items: lines.map((l) => ({ id: l.item.id, count: l.count })),
+      discount: cleanDiscount(form.discount),
+    };
+    setBusy(true);
+    const res = form.id
+      ? await sb.from('bundles').update(payload).eq('id', form.id).select().single()
+      : await sb.from('bundles').insert(payload).select().single();
+    setBusy(false);
+    if (res.error) {
+      console.warn('[meubles] lot :', res.error.message);
+      return pushToast(t('Could not save, try again.', 'Enregistrement impossible, réessaie.'));
+    }
+    setBundles((prev) => (form.id ? prev.map((b) => (b.id === form.id ? res.data : b)) : [res.data, ...prev]));
+    pushToast(payload.items.some(problem)
+      ? t('Bundle saved. It will show in the shop once all its items are free.',
+          'Lot enregistré. Il apparaîtra dans la boutique quand tous ses meubles seront libres.')
+      : form.id ? t('Bundle updated.', 'Lot mis à jour.') : t('Bundle published: it is in the shop.', 'Lot publié : il est dans la boutique.'));
+    setForm(null);
+  };
+
+  const remove = async (bundle) => {
+    if (!window.confirm(t(`Delete the bundle “${bundle.title}”? The items stay on sale one by one.`,
+                          `Supprimer le lot « ${bundle.title} » ? Les meubles restent en vente un par un.`))) return;
+    const { error } = await sb.from('bundles').delete().eq('id', bundle.id);
+    if (error) return pushToast(t('Could not delete.', 'Suppression impossible.'));
+    setBundles((prev) => prev.filter((b) => b.id !== bundle.id));
+    if (form && form.id === bundle.id) setForm(null);
+    pushToast(t('Bundle deleted.', 'Lot supprimé.'));
+  };
+
+  if (missing) {
+    return (
+      <div className="border border-dashed border-amber-300 bg-amber-50 rounded-xl px-6 py-10 text-center text-amber-900">
+        <p className="font-semibold">{t('Bundles are not turned on yet.', 'Les lots ne sont pas encore activés.')}</p>
+        <p className="mt-1 text-sm leading-relaxed">
+          {t(<>Run <code className="bg-white px-1.5 py-0.5 rounded">migration-lots.sql</code> once in Supabase
+               (SQL Editor → New query → Run), then refresh the page.</>,
+             <>Lance <code className="bg-white px-1.5 py-0.5 rounded">migration-lots.sql</code> une fois dans Supabase
+               (SQL Editor → New query → Run), puis actualise la page.</>)}
+        </p>
+      </div>
+    );
+  }
+
+  const thumb = (item, cls) => (
+    <div className={`rounded-lg bg-blue-50 border border-blue-100 overflow-hidden flex items-center justify-center ${cls}`}>
+      {item && item.image ? <img src={item.image} alt="" className="w-full h-full object-cover" />
+                          : <Icon name="image" className="w-5 h-5 text-blue-200" />}
+    </div>
+  );
+
+  const editor = form && (() => {
+    const lines = linesOf(form.entries);
+    const pct = cleanDiscount(form.discount);
+    const { full, price, saved } = bundlePrices(lines, pct);
+    // Les meubles qu'on peut mettre dans un lot : ceux encore en vente, et
+    // ceux déjà dans ce lot.
+    const candidates = items.filter((i) => isOn(i) || (i.status !== 'sold' && leftQty(i) > 0));
+    const stepBtn = 'w-8 h-8 rounded-lg border border-slate-300 bg-white text-lg font-semibold text-slate-700 '
+      + 'disabled:border-slate-100 disabled:text-slate-300';
+    return (
+      <div className="border border-blue-200 rounded-xl bg-blue-50 p-5 mb-8">
+        <h2 className="display font-bold text-lg">{form.id ? t('Edit bundle', 'Modifier le lot') : t('New bundle', 'Nouveau lot')}</h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {t('Tick the items sold together. The first one ticked is the card on top.',
+             'Coche les meubles vendus ensemble. Le premier coché est la carte du dessus.')}
+        </p>
+
+        {candidates.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-600">{t('No items for sale yet: add some in Listings first.', 'Aucun meuble en vente : ajoute-en d’abord dans Annonces.')}</p>
+        ) : (
+          <ul className="mt-3 grid sm:grid-cols-2 gap-2">
+            {candidates.map((item) => {
+              const on = isOn(item);
+              const entry = form.entries.find((e) => String(e.id) === String(item.id));
+              const count = entry ? entry.count : 1;
+              const max = Math.max(1, leftQty(item));
+              const note = on ? problem({ id: item.id, count }) : null;
+              return (
+                <li key={item.id}
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-2 bg-white ${on ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200'}`}>
+                  <input id={`lot-${item.id}`} type="checkbox" checked={on} onChange={() => toggle(item)}
+                         className="w-4 h-4 accent-blue-700 shrink-0" />
+                  <label htmlFor={`lot-${item.id}`} className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                    {thumb(item, 'w-12 h-10 shrink-0')}
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium truncate">{item.title}</span>
+                      <span className="block text-xs text-slate-500">
+                        {withKr(item.price) || t('free', 'gratuit')}{totalQty(item) > 1 && priceValue(item.price) > 0 ? t(' each', ' l’unité') : ''}
+                      </span>
+                      {note && <span className="block text-xs text-amber-700">{note}</span>}
+                    </span>
+                  </label>
+                  {on && max > 1 && (
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <button type="button" onClick={() => setCount(item, count - 1)} disabled={count <= 1}
+                              aria-label={t(`One less ${item.title}`, `Un de moins : ${item.title}`)} className={stepBtn}>−</button>
+                      <span className="w-5 text-center font-bold tabular-nums">{count}</span>
+                      <button type="button" onClick={() => setCount(item, count + 1)} disabled={count >= max}
+                              aria-label={t(`One more ${item.title}`, `Un de plus : ${item.title}`)} className={stepBtn}>+</button>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div className="mt-5">
+          <span className="text-sm text-slate-600">{t('Discount on the bundle', 'Remise sur le lot')}</span>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {DISCOUNT_CHOICES.map((d) => (
+              <button key={d} type="button" onClick={() => set('discount', d)} aria-pressed={pct === d}
+                      className={`rounded-lg text-sm border px-3 py-1.5 ${
+                        pct === d ? 'bg-blue-700 border-blue-700 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                {d ? pctText(d, t.lang) : t('None', 'Aucune')}
+              </button>
+            ))}
+            <label className="flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+              <span className="sr-only">{t('Other discount, in %', 'Autre remise, en %')}</span>
+              <span className="pl-3 text-slate-500 text-sm">{t('Other', 'Autre')}</span>
+              <input type="number" min="0" max={MAX_DISCOUNT} inputMode="numeric" value={form.discount}
+                     onChange={(e) => set('discount', e.target.value)}
+                     className="w-16 rounded-lg px-2 py-1.5 bg-transparent outline-none text-right" />
+              <span className="pr-3 text-slate-500 text-sm">%</span>
+            </label>
+          </div>
+        </div>
+
+        <label className="block mt-4">
+          <span className="text-sm text-slate-600">
+            {t('Title', 'Titre')} <span className="text-slate-400">({inShopLang}, {t('optional', 'facultatif')})</span>
+          </span>
+          <input value={form.title} onChange={(e) => set('title', e.target.value)} maxLength={160}
+                 className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                 placeholder={autoBundleTitle(lines) || (shopLang === 'fr' ? 'Lit + matelas' : 'Bed + mattress')} />
+          <span className="block mt-1 text-xs text-slate-500">
+            {t('Left empty, it lists the items: “Bed + Mattress”.', 'Laissé vide, il reprend les meubles : « Lit + Matelas ».')}
+          </span>
+        </label>
+
+        {lines.length > 0 && full > 0 && (
+          <p className="mt-4 text-sm text-slate-700">
+            {t('Separately', 'Séparément')} {pct > 0 ? <s className="text-slate-400">{fmtKr(full)}</s> : fmtKr(full)}
+            {pct > 0 && (
+              <>
+                {' → '}<strong className="text-blue-800 text-base">{fmtKr(price)}</strong>
+                {' '}{t(`for the bundle, the buyer saves ${fmtKr(saved)}`, `pour le lot, l’acheteur économise ${fmtKr(saved)}`)}
+              </>
+            )}
+          </p>
+        )}
+
+        {countAll(lines) >= 2 && (
+          <div className="mt-5">
+            <span className="text-sm text-slate-600">{t('Preview in the shop', 'Aperçu dans la boutique')}</span>
+            <LangContext.Provider value={shopLang}>
+              <ul className="mt-3 max-w-sm px-3 py-2">
+                <BundleCard preview bundle={{ title: form.title.trim() || autoBundleTitle(lines), discount: pct }}
+                            lines={lines} onPhoto={() => {}} />
+              </ul>
+            </LangContext.Provider>
+          </div>
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <button onClick={save} disabled={busy}
+                  className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-5 py-2.5 text-sm">
+            {busy ? t('Saving…', 'Enregistrement…') : form.id ? t('Save changes', 'Enregistrer les modifications') : t('Publish bundle', 'Publier le lot')}
+          </button>
+          <button onClick={() => setForm(null)} className="text-sm text-slate-600 hover:text-slate-900 px-4">
+            {t('Cancel', 'Annuler')}
+          </button>
+        </div>
+      </div>
+    );
+  })();
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+        <p className="text-sm text-slate-500 max-w-xl leading-relaxed">
+          {t('A bundle groups items already for sale, with a discount. In the shop it shows as stacked cards above the items, and each item stays on sale on its own. As soon as one of them is reserved or sold, the bundle leaves the shop.',
+             'Un lot regroupe des meubles déjà en vente, avec une remise. Dans la boutique, il s’affiche en cartes empilées au-dessus des meubles, et chaque meuble reste aussi en vente seul. Dès que l’un d’eux est réservé ou vendu, le lot quitte la boutique.')}
+        </p>
+        {!form && (
+          <button onClick={() => openForm(null)}
+                  className="shrink-0 inline-flex items-center gap-2 font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-lg px-4 py-2.5 text-sm">
+            <Icon name="plus" className="w-4 h-4" /> {t('Create a bundle', 'Créer un lot')}
+          </button>
+        )}
+      </div>
+
+      {editor}
+
+      {bundles.length === 0 ? (
+        !form && (
+          <div className="border border-dashed border-blue-200 rounded-xl px-6 py-12 text-center text-slate-600">
+            {t('No bundles yet. Example: bed + mattress with 20% off.', 'Aucun lot pour l’instant. Exemple : lit + matelas avec 20 % de remise.')}
+          </div>
+        )
+      ) : (
+        <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          {bundles.map((bundle) => {
+            const entries = bundleEntries(bundle);
+            const lines = linesOf(entries);
+            const pct = cleanDiscount(bundle.discount);
+            const { full, price } = bundlePrices(lines, pct);
+            const problems = entries.map(problem).filter(Boolean);
+            const shown = problems.length === 0 && countAll(lines) >= 2;
+            return (
+              <li key={bundle.id} className="py-4 flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-2">
+                <div className="relative w-20 h-16 shrink-0" aria-hidden="true">
+                  {lines[1] && thumb(lines[1].item, 'absolute inset-0 rotate-6 translate-x-1')}
+                  {thumb(lines[0] && lines[0].item, 'absolute inset-0 shadow-sm')}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold">{bundle.title}</span>
+                    {pct > 0 && (
+                      <span className="text-xs font-bold bg-amber-400 text-amber-950 rounded-full px-2 py-0.5">{pctText(pct, t.lang)}</span>
+                    )}
+                  </div>
+                  <p className="text-sm mt-0.5">
+                    <span className="text-blue-700 font-semibold">{full > 0 ? fmtKr(price) : t('Free', 'Gratuit')}</span>
+                    {pct > 0 && full > 0 && <s className="ml-2 text-slate-400">{fmtKr(full)}</s>}
+                    <span className="text-slate-500"> · {lines.map((l) => `${l.count > 1 ? `${l.count} × ` : ''}${l.item.title}`).join(', ')}</span>
+                  </p>
+                  <p className={`text-xs mt-1 ${shown ? 'text-green-700' : 'text-amber-700'}`}>
+                    {shown ? t('In the shop', 'Dans la boutique')
+                      : t(`Not in the shop: ${problems.length ? problems.join(', ') : 'fewer than 2 items'}`,
+                          `Pas dans la boutique : ${problems.length ? problems.join(', ') : 'moins de 2 meubles'}`)}
+                  </p>
+                </div>
+                <div className="flex items-center justify-end gap-1 shrink-0 w-full sm:w-auto">
+                  <button onClick={() => openForm(bundle)}
+                          className="p-2 text-slate-500 hover:text-blue-700 rounded-lg hover:bg-blue-50" aria-label={t('Edit', 'Modifier')}>
+                    <Icon name="pencil" className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => remove(bundle)}
+                          className="p-2 text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50" aria-label={t('Delete', 'Supprimer')}>
+                    <Icon name="trash" className="w-4 h-4" />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -4974,7 +5667,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
       <div key={b.id}>
         {body}
         {selling === b.id && !b.outcome && n > 0 && (
-          <SalePrompt item={item} count={n} onConfirm={(total) => sold(b, item, n, total)}
+          <SalePrompt item={item} count={n} discount={b.bundle_discount} onConfirm={(total) => sold(b, item, n, total)}
                       onCancel={() => setSelling(null)} />
         )}
       </div>
@@ -5016,6 +5709,9 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
               const it = itemOf(r);
               return sum + (it ? priceValue(it.price) * (r.quantity || 1) : 0);
             }, 0);
+            // Pris pour un lot (migration-lots.sql) : son titre et sa remise.
+            const lot = rows.find((r) => r.bundle_title);
+            const pct = lot ? cleanDiscount(lot.bundle_discount) : 0;
             return (
               <li key={b.id} className={`border rounded-xl px-4 py-4 ${status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -5025,7 +5721,11 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                         <Icon name="user" className="w-4 h-4 text-blue-700" /> {b.first_name}
                       </span>
                       <span className={`text-xs rounded-full px-2 py-0.5 ${cls}`}>{label}</span>
-                      {many && (
+                      {lot ? (
+                        <span className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-200">
+                          <Icon name="layers" className="w-3.5 h-3.5" /> {t('Bundle', 'Lot')}{pct > 0 ? ` ${pctText(pct, t.lang)}` : ''}
+                        </span>
+                      ) : many && (
                         <span className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-100">
                           <Icon name="bag" className="w-3.5 h-3.5" /> {t('Cart', 'Panier')}
                         </span>
@@ -5050,7 +5750,14 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                       )}
                     </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      {many ? (
+                      {lot ? (
+                        <>
+                          {t('For the bundle', 'Pour le lot')} <strong className="text-slate-800">{t(`“${lot.bundle_title}”`, `« ${lot.bundle_title} »`)}</strong>
+                          {listed > 0 && (pct > 0
+                            ? ` · ${fmtKr(afterDiscount(listed, pct))} ${t(`instead of ${fmtKr(listed)}`, `au lieu de ${fmtKr(listed)}`)}`
+                            : ` · ${fmtKr(listed)}`)}
+                        </>
+                      ) : many ? (
                         <>
                           {t('For:', 'Pour :')} <strong className="text-slate-800">{t(`${rows.length} items`, `${rows.length} meubles`)}</strong>
                           {' '}{t('at the same viewing', 'au même rendez-vous')}
@@ -5081,7 +5788,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                   </div>
                 </div>
 
-                {rows.map((r) => outcome(r, many))}
+                {rows.map((r) => outcome(r, many || !!lot))}
               </li>
             );
           })}
@@ -5182,6 +5889,10 @@ function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
             const [label, cls] = labels[m.status] || labels.seen;
             const tel = phoneInfo(m.phone);
             const lines = Array.isArray(m.items) ? m.items : [];
+            // Question posée sur un lot : son titre, sa remise et son prix.
+            const lot = lines.find((l) => l && l.bundle);
+            const lotPct = lot ? cleanDiscount(lot.discount) : 0;
+            const lotFull = lines.reduce((sum, l) => sum + priceValue(l.price) * (l.quantity || 1), 0);
             return (
               <li key={m.id} className={`border rounded-xl px-4 py-4 ${
                 m.status === 'new' ? 'border-blue-300 bg-blue-50' : 'border-slate-200'} ${m.status === 'done' ? 'opacity-70' : ''}`}>
@@ -5226,6 +5937,17 @@ function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
                   </div>
                 </div>
 
+                {lot && (
+                  <p className="mt-2 text-sm font-semibold text-amber-900 inline-flex flex-wrap items-center gap-1.5">
+                    <Icon name="layers" className="w-3.5 h-3.5" />
+                    {t('Bundle', 'Lot')} {t(`“${lot.bundle}”`, `« ${lot.bundle} »`)}
+                    {lotFull > 0 && (
+                      <span className="font-normal text-slate-500">
+                        · {fmtKr(afterDiscount(lotFull, lotPct))}{lotPct > 0 ? ` (${pctText(lotPct, t.lang)}, ${t('instead of', 'au lieu de')} ${fmtKr(lotFull)})` : ''}
+                      </span>
+                    )}
+                  </p>
+                )}
                 {lines.length > 0 && (
                   <ul className="mt-2 text-sm text-slate-600 space-y-0.5">
                     {lines.map((l, i) => (
