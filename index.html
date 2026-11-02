@@ -249,7 +249,11 @@ const DAYS = {
   en: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
   fr: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 };
+// Les sites proposés en boutons sous « Liens vers les autres sites » d'une
+// annonce. Choisis dans l'onglet Réglages (colonne link_sites de settings,
+// migration-sites.sql) ; avant la migration, cette liste de départ.
 const LINK_PRESETS = ['Facebook Marketplace', 'DBA', 'Leboncoin', 'Vinted'];
+const linkSites = (settings) => (Array.isArray(settings.link_sites) ? settings.link_sites : LINK_PRESETS);
 const FALLBACK_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
 
 const DEFAULT_SETTINGS = {
@@ -3303,7 +3307,8 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
       <main className="max-w-5xl mx-auto px-4 sm:px-5 py-8 print:p-0 print:max-w-none">
         {tab === 'annonces' && (
           <ItemsPanel items={items} setItems={setItems} bundles={bundles} manyPhotos={manyPhotos} bookings={bookings}
-                      photoCounts={photoCounts} setPhotoCounts={setPhotoCounts} pushToast={pushToast} />
+                      photoCounts={photoCounts} setPhotoCounts={setPhotoCounts} pushToast={pushToast}
+                      sites={linkSites(settings)} />
         )}
         {tab === 'lots' && (
           <BundlesPanel items={items} bookings={bookings} bundles={bundles} setBundles={setBundles}
@@ -4498,7 +4503,7 @@ function heldNote(item, bookings, t) {
     : t(`held by ${names}, viewing on ${date} at ${b.slot}`, `réservé par ${names}, rdv le ${date} à ${b.slot}`);
 }
 
-function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCounts, setPhotoCounts, pushToast }) {
+function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCounts, setPhotoCounts, pushToast, sites = LINK_PRESETS }) {
   const t = useT();
   // Titres et descriptions s'écrivent dans la langue des acheteurs.
   const shopLang = useShopLang();
@@ -5008,7 +5013,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
                 <div key={idx} className="flex gap-2">
                   <input value={l.label}
                          onChange={(e) => { const links = [...form.links]; links[idx] = { ...l, label: e.target.value }; set('links', links); }}
-                         className="w-44 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" placeholder="Facebook Marketplace" />
+                         className="w-44 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" placeholder={sites[0] || 'Facebook Marketplace'} />
                   <input value={l.url}
                          onChange={(e) => { const links = [...form.links]; links[idx] = { ...l, url: e.target.value }; set('links', links); }}
                          className="flex-1 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" placeholder="https://…" />
@@ -5020,12 +5025,18 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
               ))}
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
-              {LINK_PRESETS.map((p) => (
+              {sites.map((p) => (
                 <button key={p} onClick={() => set('links', [...(form.links || []), { label: p, url: '' }])}
                         className="text-xs border border-blue-200 text-blue-800 rounded-full px-3 py-1 hover:bg-white">
                   + {p}
                 </button>
               ))}
+              {sites.length === 0 && (
+                <span className="text-xs text-slate-500">
+                  {t('Add the sites you post on in Settings to get one-click buttons here.',
+                     'Ajoute les sites où tu postes dans Réglages pour avoir des boutons ici.')}
+                </span>
+              )}
             </div>
           </div>
 
@@ -6836,6 +6847,35 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
     }
   };
 
+  // Les sites proposés dans le formulaire d'une annonce. La colonne
+  // n'existe qu'après migration-sites.sql. Tout de suite à l'écran ; si la
+  // base refuse, on revient en arrière.
+  const sitesReady = 'link_sites' in settings;
+  const sites = linkSites(settings);
+  const [newSite, setNewSite] = useState('');
+
+  const saveSites = async (next) => {
+    const before = settings.link_sites;
+    setSettings((s) => ({ ...s, link_sites: next }));
+    const { error } = await sb.from('settings').update({ link_sites: next }).eq('id', 1);
+    if (!error) return true;
+    setSettings((s) => ({ ...s, link_sites: before }));
+    pushToast(t('Could not save, try again.', 'Enregistrement impossible, réessaie.'));
+    return false;
+  };
+
+  const addSite = async (e) => {
+    e.preventDefault();
+    const name = newSite.trim().replace(/\s+/g, ' ');
+    if (!name) return;
+    if (sites.some((s) => s.toLowerCase() === name.toLowerCase()))
+      return pushToast(t(`${name} is already in the list.`, `${name} est déjà dans la liste.`));
+    setNewSite('');
+    if (!(await saveSites([...sites, name]))) setNewSite(name);
+  };
+
+  const removeSite = (name) => saveSites(sites.filter((s) => s !== name));
+
   return (
     <div className="space-y-10 max-w-2xl">
       {!shopReady && (
@@ -6885,6 +6925,53 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
                 'La langue de ces écrans, pour toi seulement : les acheteurs ne la voient jamais. Gardée sur cet appareil tant que migration-langue.sql n’est pas lancé.')}
         </p>
         <LangPicker value={adminLang} onPick={pickAdmin} label={t('Seller space language', 'Langue de l’espace vendeur')} />
+      </section>
+
+      <section>
+        <h2 className="display font-bold text-lg">{t('Other sites', 'Autres sites')}</h2>
+        <p className="text-sm text-slate-500 mt-0.5 leading-relaxed">
+          {t('The sites where you also post your furniture. Each one becomes a button under “Links to other sites” when you edit a listing: you only paste the link.',
+             'Les sites où tu postes aussi tes meubles. Chacun devient un bouton sous « Liens vers les autres sites » quand tu modifies une annonce : tu n’as plus qu’à coller le lien.')}
+        </p>
+        {!sitesReady && (
+          <div className="mt-3 border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900 leading-relaxed" role="status">
+            {t(<>To change this list, run <code className="bg-white px-1 rounded">migration-sites.sql</code> once in
+                 Supabase (SQL Editor → New query → Run), then refresh the page. Until then, these are the buttons.</>,
+               <>Pour changer cette liste, lance <code className="bg-white px-1 rounded">migration-sites.sql</code> une fois
+                 dans Supabase (SQL Editor → New query → Run), puis actualise la page. D’ici là, ce sont ces boutons-là.</>)}
+          </div>
+        )}
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {sites.map((s) => (
+            <li key={s} className="inline-flex items-center gap-0.5 border border-blue-200 bg-white text-blue-800 rounded-full pl-3 pr-1 py-0.5 text-sm">
+              {s}
+              {sitesReady && (
+                <button onClick={() => removeSite(s)} aria-label={t(`Remove ${s}`, `Retirer ${s}`)}
+                        className="p-1.5 rounded-full text-blue-400 hover:text-red-600 hover:bg-red-50">
+                  <Icon name="x" className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+          {sites.length === 0 && (
+            <li className="text-sm text-slate-500">{t('No site yet.', 'Aucun site pour l’instant.')}</li>
+          )}
+        </ul>
+        {sitesReady && (
+          <form onSubmit={addSite} className="mt-3 flex gap-2 max-w-md">
+            <input value={newSite} onChange={(e) => setNewSite(e.target.value)} maxLength={40}
+                   aria-label={t('Site name', 'Nom du site')} placeholder={t('e.g. GulogGratis, Reshopper…', 'ex. GulogGratis, Reshopper…')}
+                   className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-2 bg-white text-sm" />
+            <button type="submit" disabled={!newSite.trim()}
+                    className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-4 py-2 text-sm inline-flex items-center gap-1.5 shrink-0">
+              <Icon name="plus" className="w-4 h-4" /> {t('Add', 'Ajouter')}
+            </button>
+          </form>
+        )}
+        <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+          {t('Removing a site here leaves the links already added to your listings as they are.',
+             'Retirer un site ici ne touche pas aux liens déjà ajoutés dans tes annonces.')}
+        </p>
       </section>
     </div>
   );

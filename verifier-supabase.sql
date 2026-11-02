@@ -114,7 +114,18 @@ cross join lateral (values
             and coalesce(pg_get_functiondef(to_regprocedure('public.check_item_free()')), '') like '%reserved_qty%'
            then 'OK' else 'MANQUE → lance migration-lots.sql' end),
 
-  (11, 'Notif push (ntfy) : rendez-vous',
+  (10.8, 'Autres sites (onglet Réglages)',
+      case when exists (select 1 from information_schema.columns
+                         where table_schema = 'public' and table_name = 'settings'
+                           and column_name = 'link_sites')
+           -- lu par to_jsonb : la requête marche aussi avant la migration
+           then 'OK — ' || coalesce((select string_agg(x, ', ')
+                                       from public.settings s,
+                                            jsonb_array_elements_text(to_jsonb(s) -> 'link_sites') x
+                                      where s.id = 1), 'aucun site')
+           else 'MANQUE → lance migration-sites.sql' end),
+
+  (11,'Notif push (ntfy) : rendez-vous',
       case
         when not push_on then
           'pas activée (normal si tu n''utilises pas ntfy)'

@@ -21,6 +21,7 @@ peut passer en anglais ou en français dans l'onglet **Réglages**.
 | `migration-panier.sql` | Supabase, SQL Editor | une fois, **pour le panier (un rendez-vous pour plusieurs meubles) et les messages « rappelez-moi »**, après `migration-reservation.sql` (sans risque à relancer) |
 | `migration-langue.sql` | Supabase, SQL Editor | une fois, **pour choisir la langue de la boutique** dans l'onglet Réglages (sans risque à relancer) |
 | `migration-lots.sql` | Supabase, SQL Editor | une fois, **pour les lots (plusieurs meubles vendus ensemble avec une remise) et « Marquer réservé »**, après `migration-reservation.sql` et `migration-panier.sql` (sans risque à relancer) |
+| `migration-sites.sql` | Supabase, SQL Editor | une fois, **pour choisir dans l'onglet Réglages les sites proposés** sous « Liens vers les autres sites » d'une annonce (sans risque à relancer) |
 | `verifier-supabase.sql` | Supabase, SQL Editor | quand tu veux : dit ce qui est installé et quel fichier lancer sinon (ne modifie rien) |
 | `migration-planning-par-objet.sql` | Supabase, SQL Editor | **inutile** en installation neuve, `schema.sql` l'inclut déjà |
 | `reset-mot-de-passe.sql` | Supabase, SQL Editor | seulement si tu as oublié le mot de passe vendeur |
