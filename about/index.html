@@ -1,0 +1,1900 @@
+<!doctype html>
+<html lang="fr" data-lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>møbel · Tout doit partir</title>
+<meta name="description" content="møbel, la boutique open source pour vider son logement quand on vit à l'étranger : un lien à partager, une affiche avec QR code, des rendez-vous qui se réservent tout seuls. Gratuit, un seul fichier HTML.">
+<meta name="theme-color" content="#16307a">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="møbel">
+<meta property="og:title" content="møbel — Everything must go">
+<meta property="og:description" content="Open-source shop to clear out your home when you live abroad: one link for community groups, a QR-code poster, viewings that book themselves. Free, one HTML file.">
+<meta property="og:url" content="https://tom7053.github.io/meubles/about/">
+<meta property="og:image" content="https://tom7053.github.io/meubles/about/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316307a'/%3E%3Ctext x='32' y='45' font-family='Arial,sans-serif' font-weight='700' font-size='38' text-anchor='middle' fill='%23ffffff'%3E%C3%B8%3C/text%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<!-- Langue choisie avant l'affichage : pas de clignotement FR → EN. -->
+<script>
+  (function () {
+    var lang = null;
+    try { lang = localStorage.getItem('mobel-lang'); } catch (e) { /* navigation privée */ }
+    if (lang !== 'fr' && lang !== 'en') {
+      lang = /^fr\b/i.test(navigator.language || '') ? 'fr' : 'en';
+    }
+    document.documentElement.setAttribute('data-lang', lang);
+    document.documentElement.setAttribute('lang', lang);
+  })();
+</script>
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #f3f6fd;
+    --card: #ffffff;
+    --ink: #101a2e;
+    --ink-2: #2b3a52;
+    --muted: #5b6b82;
+    --line: #dbe6fb;
+    --line-2: #c4d3f1;
+    --heading: #16307a;
+    --accent: #1d4ed8;
+    --accent-hover: #1a43bd;
+    --accent-ink: #ffffff;
+    --accent-soft: #e8effd;
+    --navy: #16307a;
+    --code-bg: #0e1730;
+    --code-ink: #dfe7f7;
+    --code-line: #22305a;
+    --shadow: 0 1px 2px rgba(16, 26, 46, .06), 0 14px 36px rgba(22, 48, 122, .12);
+    --shadow-lg: 0 2px 6px rgba(16, 26, 46, .08), 0 30px 70px rgba(22, 48, 122, .22);
+    --gfi: #7057ff;
+    --hw: #008672;
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a1020;
+      --bg-alt: #0d1630;
+      --card: #111b35;
+      --ink: #e7edfa;
+      --ink-2: #c2cde4;
+      --muted: #8a9bbb;
+      --line: #1d2a4a;
+      --line-2: #2a3a60;
+      --heading: #c9d8ff;
+      --accent: #7ea3ff;
+      --accent-hover: #9ab8ff;
+      --accent-ink: #0a1020;
+      --accent-soft: #16244a;
+      --code-bg: #070d1c;
+      --code-line: #1a2547;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 14px 36px rgba(0, 0, 0, .35);
+      --shadow-lg: 0 2px 6px rgba(0, 0, 0, .35), 0 30px 70px rgba(0, 0, 0, .5);
+      --gfi: #a99bff;
+      --hw: #3fc7a9;
+    }
+  }
+
+  /* Une langue à la fois : chaque texte existe en lang="fr" et lang="en". */
+  [data-lang="fr"] body [lang="en"],
+  [data-lang="en"] body [lang="fr"] { display: none !important; }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.6 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    overflow-x: hidden;
+  }
+  img, svg { display: block; max-width: 100%; }
+  a { color: var(--accent); }
+  p { margin: 0; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+  code, kbd, pre { font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas, monospace; }
+  :not(pre) > code {
+    font-size: .86em; background: var(--accent-soft); color: var(--heading);
+    padding: .12em .4em; border-radius: 6px; white-space: nowrap;
+  }
+
+  .wrap { width: 100%; max-width: 1140px; margin: 0 auto; padding: 0 16px; }
+  @media (min-width: 640px) { .wrap { padding: 0 28px; } }
+
+  .display { font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; }
+  .o { color: var(--accent); }
+
+  .eyebrow {
+    display: flex; align-items: center; gap: 12px; margin: 0 0 18px;
+    color: var(--accent); font-size: 14px; font-weight: 600; letter-spacing: .01em;
+  }
+  .eyebrow::before { content: ""; flex: none; width: 44px; height: 3px; background: currentColor; border-radius: 2px; }
+
+  h1, h2, h3, h4 { font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; color: var(--heading); margin: 0; }
+  h2 { font-weight: 800; font-size: clamp(2rem, 5.2vw, 3.3rem); line-height: 1.02; letter-spacing: -.02em; }
+  h3 { font-weight: 700; font-size: clamp(1.4rem, 3vw, 1.85rem); line-height: 1.12; letter-spacing: -.01em; }
+  .lede { font-size: clamp(1.05rem, 2.2vw, 1.22rem); line-height: 1.6; color: var(--ink-2); max-width: 640px; }
+
+  section { padding: 72px 0; }
+  @media (min-width: 900px) { section { padding: 104px 0; } }
+  .alt { background: var(--bg-alt); }
+  .section-head { max-width: 760px; margin-bottom: 44px; }
+  .section-head .lede { margin-top: 18px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    min-height: 48px; padding: 0 22px; border-radius: 14px; border: 1.5px solid transparent;
+    font-weight: 600; font-size: 15.5px; text-decoration: none; cursor: pointer;
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn svg { width: 19px; height: 19px; flex: none; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-ghost { border-color: var(--line-2); color: var(--heading); background: var(--card); }
+  .btn-ghost:hover { border-color: var(--accent); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
+
+  /* ------------------------------ nav ------------------------------- */
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav .wrap { display: flex; align-items: center; gap: 16px; height: 62px; }
+  .logo {
+    font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 25px;
+    letter-spacing: -.02em; color: var(--heading); text-decoration: none; line-height: 1;
+  }
+  .nav-links { display: none; gap: 4px; margin-left: 12px; }
+  .nav-links a {
+    color: var(--ink-2); text-decoration: none; font-size: 14.5px; font-weight: 500;
+    padding: 8px 11px; border-radius: 10px;
+  }
+  .nav-links a:hover { background: var(--accent-soft); color: var(--heading); }
+  @media (min-width: 900px) { .nav-links { display: flex; } }
+  .nav-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .lang {
+    display: inline-flex; border: 1.5px solid var(--line-2); border-radius: 11px; padding: 2px; background: var(--card);
+  }
+  .lang button {
+    border: 0; background: none; cursor: pointer; font-size: 13px; font-weight: 700;
+    padding: 6px 10px; border-radius: 8px; color: var(--muted); letter-spacing: .03em;
+  }
+  .lang button[aria-pressed="true"] { background: var(--accent-soft); color: var(--heading); }
+  .gh-btn {
+    display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px;
+    border-radius: 11px; background: var(--heading); color: var(--bg); text-decoration: none;
+    font-weight: 600; font-size: 14px;
+  }
+  .gh-btn svg { width: 18px; height: 18px; }
+  .gh-btn .gh-label { display: none; }
+  @media (min-width: 520px) { .gh-btn .gh-label { display: inline; } }
+
+  /* ------------------------------ hero ------------------------------ */
+  .hero { padding: 48px 0 72px; overflow: hidden; }
+  @media (min-width: 1000px) { .hero { padding: 80px 0 110px; } }
+  .hero .wrap { display: grid; gap: 52px; align-items: center; }
+  @media (min-width: 1000px) { .hero .wrap { grid-template-columns: 1.02fr 1fr; gap: 56px; } }
+  .hero h1 {
+    font-weight: 800; font-size: clamp(3.1rem, 10.5vw, 6rem); line-height: .93; letter-spacing: -.035em;
+  }
+  .hero .lede { margin-top: 26px; }
+  .hero .btn-row { margin-top: 34px; }
+  .hero-meta {
+    margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted);
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .hero-meta svg { width: 16px; height: 16px; color: var(--accent); }
+  .hero-origin { margin-top: 18px; font-size: 14.5px; }
+  .hero-origin a { font-weight: 600; text-decoration: none; }
+  .hero-origin a:hover { text-decoration: underline; }
+
+  .stage { position: relative; width: 100%; max-width: 560px; margin: 0 auto; aspect-ratio: 1 / 1.02; }
+  .stage .sheet-hero {
+    position: absolute; left: 0; top: 2%; width: 63%;
+    transform: rotate(-3.5deg); box-shadow: var(--shadow-lg); border-radius: 3px; overflow: hidden;
+  }
+  .stage .phone { position: absolute; right: 0; bottom: 0; width: 47%; transform: rotate(2.5deg); }
+  .stage-tag {
+    position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card); color: var(--heading); border: 1px solid var(--line);
+    box-shadow: var(--shadow); border-radius: 999px; padding: 7px 13px; font-size: 13px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .stage-tag svg { width: 15px; height: 15px; color: var(--accent); }
+  .stage-tag.t1 { left: 33%; top: -1%; }
+  .stage-tag.t2 { left: 4%; bottom: 6%; }
+  @media (max-width: 520px) { .stage-tag { font-size: 11.5px; padding: 5px 10px; } }
+
+  /* --------------------------- affiche A4 --------------------------- */
+  /* Mêmes proportions que l'affiche de l'app (210 × 297 mm) ; les tailles
+     sont en cqw, donc en % de la largeur de l'affiche. */
+  .poster {
+    container-type: inline-size; position: relative; width: 100%; aspect-ratio: 210 / 297;
+    background: #fff; color: #101a2e; display: flex; flex-direction: column; overflow: hidden;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .pst-top { flex: 1; min-height: 0; padding: 9cqw 8.5cqw 0; overflow: hidden; }
+  .pst-eyebrow { font-size: 2.3cqw; color: #1d4ed8; display: flex; align-items: center; gap: 1.6cqw; margin: 0 0 4.2cqw; }
+  .pst-eyebrow::before { content: ""; flex: none; width: 8.5cqw; height: .5cqw; background: #1d4ed8; }
+  .pst-title {
+    font-family: 'Bricolage Grotesque', 'Segoe UI', sans-serif; font-weight: 800; color: #16307a;
+    font-size: 10.4cqw; line-height: .94; letter-spacing: -.02em; max-width: 64cqw;
+  }
+  .pst-lede { margin-top: 3.6cqw; font-size: 2.45cqw; line-height: 1.5; color: #2b3a52; max-width: 72cqw; }
+  .pst-list { list-style: none; margin: 4.6cqw 0 0; padding: 0; border-top: .35cqw solid #dbe6fb; }
+  .pst-list li {
+    display: flex; align-items: baseline; gap: 1cqw; padding: 1.55cqw 0;
+    border-bottom: .2cqw solid #dbe6fb; font-size: 2.45cqw; line-height: 1.2;
+  }
+  .pst-name { font-weight: 500; white-space: nowrap; }
+  .pst-qty { color: #5b6b82; font-weight: 400; }
+  .pst-dots { flex: 1; min-width: 2cqw; border-bottom: .25cqw dotted #b9c9e6; transform: translateY(-.6cqw); }
+  .pst-price { font-weight: 600; color: #1d4ed8; white-space: nowrap; }
+  .pst-each { color: #5b6b82; font-weight: 400; }
+  .pst-more { margin-top: 2.6cqw; font-size: 2.15cqw; line-height: 1.55; color: #5b6b82; }
+  .pst-band {
+    flex: none; background: #16307a; color: #fff; display: flex; align-items: center; gap: 5cqw;
+    padding: 6.2cqw 8.5cqw;
+  }
+  .pst-qr { flex: none; width: 21cqw; aspect-ratio: 1; background: #fff; border-radius: 2.2cqw; padding: 1.6cqw; }
+  .pst-qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+  .pst-cta { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 3.9cqw; line-height: 1.12; }
+  .pst-info { margin-top: 1.2cqw; font-size: 2.1cqw; color: #c9d7f5; }
+  .pst-pay { margin-top: 2.2cqw; display: flex; gap: 1.2cqw; }
+  .pst-pay span { border: .25cqw solid rgba(255, 255, 255, .6); border-radius: 99px; padding: .8cqw 2.6cqw; font-size: 2cqw; }
+  .pst-edit { outline: none; border-radius: 1cqw; transition: background .15s, box-shadow .15s; }
+  .is-editable .pst-edit { cursor: text; }
+  .is-editable .pst-edit:hover { background: rgba(29, 78, 216, .07); box-shadow: 0 0 0 .6cqw rgba(29, 78, 216, .07); }
+  .is-editable .pst-edit:focus { background: rgba(29, 78, 216, .1); box-shadow: 0 0 0 .6cqw rgba(29, 78, 216, .1); }
+
+  /* La feuille : 1 affiche A4, ou 2 affiches A5 sur un A4 paysage. */
+  .sheet { background: #fff; display: flex; gap: 0; padding: 2.4%; position: relative; }
+  .sheet .slot { flex: 1 1 0; min-width: 0; }
+  .sheet .slot + .slot { display: none; }
+  .sheet.is-two .slot + .slot { display: block; }
+  .sheet.is-two { gap: 4.8%; }
+  .sheet.is-two::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1.5px dashed #9fb3d9;
+  }
+
+  /* ---------------------------- téléphone --------------------------- */
+  /* Le conteneur porte les cqw ; le cadre et l'écran s'y mesurent. */
+  .phone { container-type: inline-size; }
+  .phone-frame {
+    aspect-ratio: 9 / 19; background: #0b1222; border-radius: 15cqw;
+    padding: 3.2cqw; box-shadow: var(--shadow-lg);
+  }
+  .phone-screen {
+    position: relative; height: 100%; border-radius: 12cqw; overflow: hidden; background: #f8fafc;
+    color: #0f172a; font-family: 'Inter', sans-serif;
+  }
+  .ph-status {
+    display: flex; justify-content: space-between; align-items: center; padding: 3.6cqw 7cqw 0;
+    font-size: 3.9cqw; font-weight: 600; color: #fff; position: absolute; inset: 0 0 auto; z-index: 2;
+  }
+  .ph-notch { width: 26cqw; height: 6.5cqw; background: #0b1222; border-radius: 99px; }
+  .ph-hero { background: #1e40af; color: #fff; padding: 15cqw 6cqw 8cqw; }
+  .ph-kicker { font-size: 3.6cqw; color: #bfdbfe; font-weight: 500; }
+  .ph-h1 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 9cqw; line-height: 1.1; margin-top: 1cqw; }
+  .ph-chips { display: flex; flex-wrap: wrap; gap: 1.8cqw; margin-top: 3.6cqw; }
+  .ph-chips span {
+    display: inline-flex; align-items: center; gap: 1.2cqw; background: rgba(255, 255, 255, .13);
+    border-radius: 99px; padding: 1.4cqw 3cqw; font-size: 3.3cqw;
+  }
+  .ph-chips svg { width: 3.6cqw; height: 3.6cqw; }
+  .ph-body { padding: 5cqw 5cqw 0; }
+  .ph-h2 { display: flex; justify-content: space-between; align-items: baseline; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 5.6cqw; }
+  .ph-h2 span { font-family: 'Inter', sans-serif; font-weight: 400; font-size: 3.3cqw; color: #64748b; }
+  .ph-card { margin-top: 3.5cqw; background: #fff; border: 1px solid #e2e8f0; border-radius: 5cqw; overflow: hidden; }
+  .ph-img { position: relative; aspect-ratio: 4 / 2.7; background: #e8effd; display: grid; place-items: center; }
+  .ph-img svg { width: 62%; }
+  .ph-count {
+    position: absolute; right: 2.6cqw; bottom: 2.6cqw; background: rgba(15, 23, 42, .7); color: #fff;
+    font-size: 3cqw; font-weight: 600; padding: .8cqw 2.2cqw; border-radius: 99px;
+  }
+  .ph-card-body { padding: 3.6cqw 4cqw 4cqw; }
+  .ph-row { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqw; }
+  .ph-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 4.8cqw; line-height: 1.15; }
+  .ph-price { font-weight: 700; color: #1d4ed8; font-size: 4.6cqw; white-space: nowrap; }
+  .ph-cond { display: inline-block; margin-top: 1.4cqw; font-size: 3cqw; background: #ecfdf5; color: #047857; border-radius: 99px; padding: .6cqw 2.2cqw; font-weight: 600; }
+  .ph-also { margin-top: 2.2cqw; font-size: 3.1cqw; color: #64748b; display: flex; flex-wrap: wrap; gap: .5cqw 2.4cqw; }
+  .ph-also b { color: #1d4ed8; font-weight: 500; }
+  .ph-btn {
+    margin-top: 3cqw; display: flex; align-items: center; justify-content: center; gap: 1.6cqw;
+    background: #1d4ed8; color: #fff; border-radius: 3.6cqw; padding: 3cqw 0; font-weight: 600; font-size: 3.7cqw;
+  }
+  .ph-btn svg { width: 4.2cqw; height: 4.2cqw; }
+
+  /* ------------------------------ histoire ---------------------------- */
+  .story-grid { display: grid; gap: 40px; }
+  @media (min-width: 960px) { .story-grid { grid-template-columns: 360px 1fr; gap: 72px; align-items: start; } }
+  .story-aside { display: grid; gap: 22px; }
+  @media (min-width: 960px) { .story-aside { position: sticky; top: 96px; } }
+  .dict {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px;
+    box-shadow: var(--shadow);
+  }
+  .dict-word { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 44px; line-height: 1; color: var(--heading); letter-spacing: -.02em; }
+  .dict-meta { margin-top: 8px; font-size: 14px; color: var(--muted); font-style: italic; }
+  .dict-def { margin-top: 12px; font-size: 16px; color: var(--ink-2); }
+  .dict-def b { color: var(--heading); }
+  .chapters { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: ch; }
+  .chapter { position: relative; padding: 0 0 38px 64px; }
+  .chapter:last-child { padding-bottom: 0; }
+  .chapter::before {
+    counter-increment: ch; content: counter(ch, decimal-leading-zero);
+    position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; background: var(--accent-soft); color: var(--heading);
+    font: 700 14px/1 'JetBrains Mono', monospace;
+  }
+  .chapter::after {
+    content: ""; position: absolute; left: 21px; top: 52px; bottom: 8px; width: 2px;
+    background: repeating-linear-gradient(to bottom, var(--line-2) 0 5px, transparent 5px 10px);
+  }
+  .chapter:last-child::after { display: none; }
+  .chapter h3 { font-size: 1.45rem; padding-top: 7px; }
+  .chapter p { margin-top: 10px; color: var(--ink-2); font-size: 17px; max-width: 620px; }
+  .quote {
+    margin: 56px 0 0; padding: 34px 32px; border-radius: var(--radius); background: var(--navy); color: #fff;
+    position: relative; overflow: hidden;
+  }
+  .quote p { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: clamp(1.5rem, 3.6vw, 2.3rem); line-height: 1.15; letter-spacing: -.01em; max-width: 680px; }
+  .quote small { display: block; margin-top: 16px; color: #b7c7ef; font-size: 14.5px; }
+  .quote::after {
+    content: "ø"; position: absolute; right: -10px; bottom: -64px; font: 800 220px/1 'Bricolage Grotesque', sans-serif;
+    color: rgba(255, 255, 255, .07);
+  }
+
+  /* ------------------------------ fonctions ---------------------------- */
+  .feature { display: grid; gap: 36px; align-items: center; padding: 28px 0; }
+  .feature + .feature { border-top: 1px solid var(--line); padding-top: 64px; margin-top: 36px; }
+  @media (min-width: 960px) {
+    .feature { grid-template-columns: 1fr 1fr; gap: 72px; }
+    .feature.flip .feature-text { order: 2; }
+  }
+  .feature-num { font: 600 13px/1 'JetBrains Mono', monospace; color: var(--accent); letter-spacing: .06em; text-transform: uppercase; }
+  .feature-text h3 { margin-top: 12px; }
+  .feature-text > p { margin-top: 14px; color: var(--ink-2); font-size: 17px; }
+  .ticks { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 10px; }
+  .ticks li { display: flex; gap: 11px; align-items: flex-start; color: var(--ink-2); }
+  .ticks svg { flex: none; width: 20px; height: 20px; margin-top: 3px; color: var(--accent); }
+  .visual {
+    background: var(--bg-alt); border: 1px solid var(--line); border-radius: 24px; padding: 28px;
+    display: grid; place-items: center; min-width: 0;
+  }
+  .alt .visual { background: var(--card); }
+  @media (max-width: 520px) { .visual { padding: 18px 14px; border-radius: 18px; } }
+
+  /* post dans un groupe */
+  .post {
+    width: 100%; max-width: 440px; background: #fff; color: #0f172a; border-radius: 16px; border: 1px solid #e2e8f0;
+    box-shadow: var(--shadow); overflow: hidden; font-size: 14.5px;
+  }
+  .post-head { display: flex; gap: 11px; align-items: center; padding: 14px 16px 0; }
+  .avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #93b4f8, #1d4ed8); }
+  .post-head b { display: block; font-size: 14.5px; }
+  .post-head small { color: #64748b; font-size: 12.5px; }
+  .post-text { padding: 12px 16px 14px; line-height: 1.5; }
+  .post-link { display: block; border-top: 1px solid #e2e8f0; background: #f1f5f9; padding: 12px 16px; }
+  .post-link small { color: #64748b; text-transform: uppercase; font-size: 11.5px; letter-spacing: .03em; }
+  .post-link b { display: block; font-size: 15px; margin-top: 2px; }
+  .post-link span { display: block; color: #475569; font-size: 13px; margin-top: 2px; }
+  .also-strip {
+    width: 100%; max-width: 440px; margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    font-size: 13.5px; color: var(--muted);
+  }
+  .also-strip span.pill {
+    display: inline-flex; align-items: center; gap: 5px; background: var(--card); border: 1px solid var(--line);
+    color: var(--heading); border-radius: 99px; padding: 5px 11px; font-weight: 500;
+  }
+  .also-strip svg { width: 13px; height: 13px; }
+
+  /* affiche interactive */
+  .poster-demo { width: 100%; display: grid; justify-items: center; gap: 18px; }
+  .poster-demo .sheet { width: 100%; max-width: 360px; box-shadow: var(--shadow-lg); transition: max-width .3s ease; }
+  .poster-demo .sheet.is-two { max-width: 560px; }
+  .seg {
+    display: inline-flex; background: var(--card); border: 1.5px solid var(--line-2); border-radius: 12px; padding: 3px;
+  }
+  .seg button {
+    border: 0; background: none; cursor: pointer; padding: 8px 14px; border-radius: 9px; font-size: 14px; font-weight: 600;
+    color: var(--muted);
+  }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+  .hint { font-size: 13.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 7px; text-align: center; }
+  .hint svg { width: 15px; height: 15px; flex: none; }
+
+  /* réservation */
+  .booking-demo { width: 100%; max-width: 420px; display: grid; gap: 16px; }
+  .bk {
+    background: #fff; color: #0f172a; border-radius: 18px; border: 1px solid #e2e8f0; box-shadow: var(--shadow); padding: 18px;
+  }
+  .bk-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 19px; }
+  .bk-sub { color: #64748b; font-size: 13.5px; margin-top: 2px; }
+  .bk-label { margin-top: 16px; font-size: 12.5px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: .04em; }
+  .bk-days, .bk-slots { display: flex; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+  .bk-day {
+    flex: 1 1 0; min-width: 48px; text-align: center; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 7px 0;
+    font-size: 12px; color: #64748b; line-height: 1.25;
+  }
+  .bk-day b { display: block; font-size: 17px; color: #0f172a; }
+  .bk-day.on { border-color: #1d4ed8; background: #eff4ff; }
+  .bk-day.on b { color: #1d4ed8; }
+  .bk-slot { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 6px 12px; font-size: 13.5px; font-weight: 500; }
+  .bk-slot.on { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+  .bk-slot.off { color: #94a3b8; text-decoration: line-through; background: #f8fafc; }
+  .bk-pay { margin-top: 8px; display: grid; gap: 7px; }
+  .bk-pay span { display: flex; align-items: center; gap: 9px; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; font-size: 14px; }
+  .bk-pay span.on { border-color: #1d4ed8; background: #eff4ff; }
+  .radio { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #94a3b8; flex: none; }
+  .on .radio { border: 5px solid #1d4ed8; }
+  .bk .ph-btn { margin-top: 16px; font-size: 15px; padding: 12px 0; border-radius: 12px; }
+  .bk .ph-btn svg { width: 18px; height: 18px; }
+  .toast {
+    display: flex; gap: 12px; align-items: flex-start; background: #0f1a33; color: #e6edf9; border-radius: 16px; padding: 14px 16px;
+    box-shadow: var(--shadow-lg); font-size: 14px; line-height: 1.45;
+  }
+  .toast-icon { flex: none; width: 34px; height: 34px; border-radius: 10px; background: #1d4ed8; display: grid; place-items: center; }
+  .toast-icon svg { width: 18px; height: 18px; color: #fff; }
+  .toast small { display: block; color: #93a4c8; font-size: 12px; margin-bottom: 2px; }
+
+  /* générateur de description */
+  .gen { display: grid; gap: 18px; margin-top: 8px; }
+  @media (min-width: 960px) { .gen { grid-template-columns: 1.08fr 1fr; gap: 28px; align-items: start; } }
+  .gen-form, .gen-out { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); min-width: 0; }
+  .alt .gen-form, .alt .gen-out { background: var(--card); }
+  .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (min-width: 520px) { .fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .field { display: grid; gap: 5px; min-width: 0; }
+  .field.span2 { grid-column: span 2; }
+  .field label, .group-label { font-size: 12.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+  .field input, .field select {
+    width: 100%; min-width: 0; height: 42px; border: 1.5px solid var(--line-2); border-radius: 11px; background: var(--bg);
+    color: var(--ink); padding: 0 11px; font: 500 16px 'Inter', sans-serif;
+  }
+  @media (min-width: 640px) { .field input, .field select { font-size: 14.5px; } }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .size-row { display: flex; align-items: center; gap: 6px; }
+  .size-row input { text-align: center; padding: 0 4px; }
+  .size-row span { color: var(--muted); font-size: 13px; }
+  .groups { display: grid; gap: 14px; margin-top: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+  .chip {
+    border: 1.5px solid var(--line-2); background: var(--bg); color: var(--ink-2); border-radius: 99px; padding: 6px 12px;
+    font-size: 13.5px; cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  .chip:hover { border-color: var(--accent); }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .gen-out { display: grid; gap: 14px; }
+  @media (min-width: 960px) { .gen-out { position: sticky; top: 90px; } }
+  .gen-badge { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--hw); }
+  .gen-badge svg { width: 15px; height: 15px; }
+  .gen-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 24px; color: var(--heading); line-height: 1.15; }
+  .gen-price { color: var(--accent); font-weight: 700; font-size: 18px; }
+  .gen-text { font-size: 16px; line-height: 1.65; color: var(--ink); min-height: 120px; }
+  .gen-text.flash { animation: flash .5s ease; }
+  @keyframes flash { from { opacity: .25; } to { opacity: 1; } }
+  .gen-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 14px; }
+  .gen-ver { font: 500 12.5px 'JetBrains Mono', monospace; color: var(--muted); }
+
+  /* petites cartes */
+  .cards { display: grid; gap: 16px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1000px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .card-icon { width: 44px; height: 44px; border-radius: 13px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+  .card-icon svg { width: 22px; height: 22px; }
+  .card h4 { margin-top: 16px; font-size: 19px; font-weight: 700; }
+  .card p { margin-top: 8px; color: var(--ink-2); font-size: 15.5px; }
+  .and-also { margin-top: 88px; }
+  .and-also h3 { margin-bottom: 26px; }
+
+  /* ------------------------------ code ------------------------------- */
+  .stack { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .stack span { border: 1px solid var(--line-2); background: var(--card); border-radius: 99px; padding: 5px 12px; font-size: 13.5px; font-weight: 500; color: var(--ink-2); }
+
+  .arch { display: grid; gap: 14px; align-items: center; margin: 8px 0 64px; }
+  @media (min-width: 900px) { .arch { grid-template-columns: 1fr 56px 1.15fr 56px 1.25fr; gap: 0; } }
+  .arch-col { display: grid; gap: 12px; }
+  .node {
+    background: var(--card); border: 1.5px solid var(--line-2); border-radius: 16px; padding: 15px 17px; min-width: 0;
+  }
+  .node b { display: block; font-family: 'Bricolage Grotesque', sans-serif; font-size: 18px; color: var(--heading); }
+  .node small { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+  .node code { white-space: normal; }
+  .node-main { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .node-main .file { margin-top: 10px; display: inline-flex; align-items: center; gap: 7px; font: 600 13px 'JetBrains Mono', monospace; color: var(--accent); }
+  .node-main .file svg { width: 15px; height: 15px; }
+  .arch-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .node-aux { border-style: dashed; padding: 12px 14px; }
+  .node-aux b { font-size: 15.5px; }
+  .node-aux small { font-size: 12.5px; }
+  .arrow { display: grid; place-items: center; color: var(--accent); height: 34px; }
+  .arrow svg { width: 34px; height: 34px; transform: rotate(90deg); }
+  @media (min-width: 900px) { .arrow { height: auto; } .arrow svg { transform: none; width: 40px; height: 40px; } }
+
+  .code-tabs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+  @media (min-width: 960px) { .code-tabs { grid-template-columns: 300px 1fr; gap: 28px; align-items: start; } }
+  .tablist { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 14px; scrollbar-width: thin; }
+  @media (min-width: 960px) { .tablist { flex-direction: column; overflow: visible; padding: 0; } }
+  .tab {
+    flex: none; text-align: left; border: 1.5px solid var(--line); background: var(--card); border-radius: 14px; padding: 11px 15px;
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .tab b { display: block; font-size: 14.5px; color: var(--heading); white-space: nowrap; }
+  .tab small { display: block; font: 500 12px 'JetBrains Mono', monospace; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+  .tab:hover { border-color: var(--line-2); }
+  .tab[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .panel { min-width: 0; }
+  .panel[hidden] { display: none; }
+  .panel-text { color: var(--ink-2); font-size: 16.5px; margin-bottom: 16px; max-width: 720px; }
+
+  .codebox { position: relative; background: var(--code-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--code-line); }
+  .codebar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--code-line);
+    color: #93a4c8; font: 500 12.5px 'JetBrains Mono', monospace;
+  }
+  .codebar .dots { display: flex; gap: 6px; }
+  .codebar .dots i { width: 10px; height: 10px; border-radius: 50%; background: #26355f; }
+  .codebar a { margin-left: auto; color: #9fb7ff; text-decoration: none; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13px; white-space: nowrap; }
+  .codebar a:hover { text-decoration: underline; }
+  .copy {
+    border: 1px solid #2a3a66; background: #142045; color: #cfdaf3; border-radius: 8px; padding: 4px 10px; font: 500 12.5px 'Inter', sans-serif;
+    cursor: pointer; white-space: nowrap;
+  }
+  .copy:hover { background: #1b2a57; }
+  .codebar a + .copy { margin-left: 4px; }
+  .codebar .grow { margin-left: auto; }
+  pre[class*="language-"], pre.plain {
+    margin: 0; padding: 18px 20px; overflow-x: auto; color: var(--code-ink); font-size: 13.5px; line-height: 1.65;
+    tab-size: 2; background: none;
+  }
+  pre code { font-size: inherit; background: none; color: inherit; padding: 0; white-space: pre; }
+  .token.comment, .token.prolog { color: #7f90b5; font-style: italic; }
+  .token.keyword, .token.tag, .token.boolean, .token.important { color: #9fb7ff; }
+  .token.string, .token.template-string, .token.attr-value, .token.char { color: #a8e6bd; }
+  .token.function, .token.attr-name, .token.class-name { color: #ffd38f; }
+  .token.number, .token.constant { color: #ffb48f; }
+  .token.regex { color: #f6a8cb; }
+  .token.punctuation, .token.operator { color: #a3b1d1; }
+  .token.property, .token.key, .token.atrule { color: #c5d7ff; }
+  .token.interpolation-punctuation { color: #f6a8cb; }
+
+  /* ------------------------------ installer --------------------------- */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: st; }
+  @media (min-width: 960px) { .steps { grid-template-columns: repeat(2, 1fr); gap: 18px; } }
+  .step {
+    position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 22px 22px 74px; min-width: 0;
+  }
+  .step::before {
+    counter-increment: st; content: counter(st);
+    position: absolute; left: 22px; top: 21px; width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font: 700 16px/1 'Inter', sans-serif;
+  }
+  .step h4 { font-size: 19px; font-weight: 700; padding-top: 4px; }
+  .step p { margin-top: 7px; color: var(--ink-2); font-size: 15.5px; }
+  .step .codebox { margin-top: 14px; }
+  .step pre[class*="language-"] { font-size: 12.5px; padding: 14px 16px; }
+  .step.wide { grid-column: 1 / -1; }
+  .note {
+    margin-top: 22px; display: flex; gap: 14px; align-items: flex-start; border: 1.5px solid var(--line-2); border-left: 5px solid var(--accent);
+    background: var(--card); border-radius: 14px; padding: 16px 18px; color: var(--ink-2); font-size: 15.5px;
+  }
+  .note svg { flex: none; width: 22px; height: 22px; color: var(--accent); margin-top: 1px; }
+  .note b { color: var(--heading); }
+
+  /* ------------------------------ contribuer -------------------------- */
+  .contrib-top { display: grid; gap: 28px; margin-bottom: 44px; }
+  @media (min-width: 960px) { .contrib-top { grid-template-columns: 1.1fr 1fr; gap: 56px; align-items: end; } }
+  .issues { display: grid; gap: 14px; }
+  @media (min-width: 760px) { .issues { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1100px) { .issues { grid-template-columns: repeat(3, 1fr); } }
+  .issue {
+    display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px;
+    color: inherit; text-decoration: none; transition: border-color .15s, transform .15s;
+  }
+  .issue:hover { border-color: var(--line-2); transform: translateY(-2px); }
+  .labels { display: flex; flex-wrap: wrap; gap: 6px; }
+  .label {
+    display: inline-flex; align-items: center; font: 600 12px/1 'Inter', sans-serif; border-radius: 99px; padding: 5px 9px;
+    border: 1.5px solid currentColor;
+  }
+  .label.gfi { color: var(--gfi); }
+  .label.hw { color: var(--hw); }
+  .label.tag { color: var(--muted); border-color: var(--line-2); }
+  .issue h4 { margin-top: 14px; font-size: 18.5px; font-weight: 700; line-height: 1.2; }
+  .issue p { margin-top: 8px; color: var(--ink-2); font-size: 15px; flex: 1; }
+  .issue-code { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .issue-code code { font-size: 12.5px; }
+
+  .contrib-bottom { display: grid; gap: 22px; margin-top: 56px; }
+  @media (min-width: 960px) { .contrib-bottom { grid-template-columns: 1.15fr 1fr; gap: 28px; align-items: start; } }
+  .contrib-box { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; min-width: 0; }
+  .contrib-box h4 { font-size: 21px; font-weight: 700; }
+  .contrib-box > p { margin-top: 8px; color: var(--ink-2); font-size: 15.5px; }
+  .contrib-box .codebox { margin-top: 16px; }
+  .ways { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 4px; }
+  .ways li a {
+    display: flex; gap: 14px; align-items: center; padding: 11px 10px; margin: 0 -10px; border-radius: 12px; text-decoration: none; color: var(--ink);
+  }
+  .ways li a:hover { background: var(--accent-soft); }
+  .ways .wi { flex: none; width: 38px; height: 38px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; }
+  .ways .wi svg { width: 19px; height: 19px; }
+  .ways b { display: block; font-size: 15.5px; color: var(--heading); }
+  .ways small { display: block; color: var(--muted); font-size: 13.5px; }
+
+  /* ------------------------------ final ------------------------------ */
+  .cta-final { background: var(--navy); color: #fff; text-align: left; position: relative; overflow: hidden; }
+  .cta-final h2 { color: #fff; max-width: 760px; }
+  .cta-final .lede { color: #c9d7f5; margin-top: 18px; }
+  .cta-final .btn-row { margin-top: 32px; }
+  .cta-final .btn-primary { background: #fff; color: #16307a; }
+  .cta-final .btn-primary:hover { background: #e8effd; }
+  .cta-final .btn-ghost { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .45); }
+  .cta-final .btn-ghost:hover { border-color: #fff; }
+  .cta-final::after {
+    content: "møbel"; position: absolute; right: -24px; bottom: -70px; font: 800 clamp(120px, 22vw, 280px)/1 'Bricolage Grotesque', sans-serif;
+    color: rgba(255, 255, 255, .06); letter-spacing: -.04em; pointer-events: none;
+  }
+
+  footer { border-top: 1px solid var(--line); padding: 30px 0 40px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: space-between; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+  footer a { color: var(--ink-2); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-both" viewBox="0 0 40 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h28M28 6l6 6-6 6M12 6l-6 6 6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 40 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h30M28 6l6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="1.5"/><path d="M2 10h20M6 15h4"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v.01M14 21h3M21 18v3h-3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-copies" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a2 2 0 0 1 2-2h11"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-zero" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3.5 3.5 0 1 0 0 5M7.5 11h6M7.5 13.5h6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 16l5-5 4 4 2-2 5 5"/><circle cx="15.5" cy="9.5" r="1.3"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/><path d="M4 4l16 16"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="8" width="10" height="13" rx="5"/><path d="M12 8v13M9 4l1.5 2M15 4l-1.5 2M3 13h4M17 13h4M4 8l3 2M20 8l-3 2M4 19l3-2M20 19l-3-2"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <!-- illustrations de meubles pour les maquettes -->
+    <symbol id="m-sofa" viewBox="0 0 120 80"><g fill="none" stroke="#16307a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><path d="M24 46V30a8 8 0 0 1 8-8h56a8 8 0 0 1 8 8v16" fill="#c7d6f5"/><rect x="14" y="40" width="18" height="24" rx="7" fill="#a9c0ef"/><rect x="88" y="40" width="18" height="24" rx="7" fill="#a9c0ef"/><rect x="31" y="47" width="58" height="17" rx="4" fill="#dbe6fb"/><path d="M60 47v17M22 64v8M98 64v8"/></g></symbol>
+    <symbol id="m-desk" viewBox="0 0 120 80"><g fill="none" stroke="#16307a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"><rect x="12" y="28" width="96" height="8" rx="2" fill="#e9d6b4"/><path d="M20 36v36"/><rect x="72" y="36" width="28" height="36" rx="2" fill="#f3e6cf"/><path d="M72 48h28M72 60h28M84 42h4M84 54h4M84 66h4"/><path d="M34 28V14M30 14h12l-3 6h-6z" fill="#dbe6fb"/></g></symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="møbel">m<span class="o">ø</span>bel</a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#histoire"><span lang="fr">Histoire</span><span lang="en">Story</span></a>
+      <a href="#fonctions"><span lang="fr">Fonctions</span><span lang="en">Features</span></a>
+      <a href="#code"><span lang="fr">Sous le capot</span><span lang="en">Under the hood</span></a>
+      <a href="#installer"><span lang="fr">Installer</span><span lang="en">Set up</span></a>
+      <a href="#contribuer"><span lang="fr">Contribuer</span><span lang="en">Contribute</span></a>
+    </nav>
+    <div class="nav-end">
+      <div class="lang" role="group" aria-label="Langue / Language">
+        <button type="button" data-set-lang="fr" aria-pressed="false">FR</button>
+        <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <a class="gh-btn" href="https://github.com/Tom7053/meubles">
+        <svg aria-hidden="true"><use href="#i-github"/></svg><span class="gh-label">GitHub</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================================ HERO ================================ -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">
+        <span lang="fr">Open source · gratuit · un seul fichier HTML</span>
+        <span lang="en">Open source · free · one HTML file</span>
+      </p>
+      <h1>
+        <span lang="fr">Tout doit partir.</span>
+        <span lang="en">Everything must go.</span>
+      </h1>
+      <p class="lede" lang="fr">
+        <b>møbel</b> est une petite boutique en ligne pour vider son logement quand on vit à l'étranger&nbsp;:
+        ton inventaire derrière un seul lien à partager dans les groupes, une affiche avec QR code pour le hall,
+        et des rendez-vous qui se réservent tout seuls.
+      </p>
+      <p class="lede" lang="en">
+        <b>møbel</b> is a tiny online shop for clearing out your home when you live abroad:
+        your whole inventory behind one link for community groups, a QR-code poster for the hallway,
+        and viewings that book themselves.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="#installer">
+          <span lang="fr">Créer ma boutique</span><span lang="en">Set up my shop</span>
+          <svg aria-hidden="true"><use href="#i-arrow"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Tom7053/meubles">
+          <svg aria-hidden="true"><use href="#i-github"/></svg>
+          <span lang="fr">Voir le code</span><span lang="en">View the code</span>
+        </a>
+      </div>
+      <div class="hero-meta">
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg>GitHub Pages</span>
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg>Supabase</span>
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">0&nbsp;€ par mois</span><span lang="en">€0 a month</span></span>
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Pas de build</span><span lang="en">No build step</span></span>
+      </div>
+      <p class="hero-origin">
+        <a href="../" data-shop-link>
+          <span lang="fr">Voir la boutique d'origine, à Odense →</span>
+          <span lang="en">See the original shop, in Odense →</span>
+        </a>
+      </p>
+    </div>
+
+    <div class="stage" aria-label="Aperçu : affiche et boutique sur téléphone">
+      <div class="sheet-hero" data-poster="hero"></div>
+      <div class="phone" aria-hidden="true"><div class="phone-frame">
+        <div class="phone-screen">
+          <div class="ph-status"><span>9:41</span><span class="ph-notch"></span><span>5G</span></div>
+          <div class="ph-hero">
+            <p class="ph-kicker">Moving out of Odense on 20 November</p>
+            <p class="ph-h1">Furniture for sale</p>
+            <p class="ph-chips">
+              <span><svg><use href="#i-pin"/></svg>Odense C</span>
+              <span><svg><use href="#i-card"/></svg>Revolut or cash</span>
+            </p>
+          </div>
+          <div class="ph-body">
+            <p class="ph-h2">What’s for sale <span>14 items</span></p>
+            <div class="ph-card">
+              <div class="ph-img"><svg viewBox="0 0 120 80"><use href="#m-sofa"/></svg><span class="ph-count">1/4</span></div>
+              <div class="ph-card-body">
+                <div class="ph-row"><p class="ph-title">Grey fabric sofa</p><p class="ph-price">600 kr</p></div>
+                <span class="ph-cond">Very good</span>
+                <p class="ph-also">Also on <b>Marketplace ↗</b> <b>DBA ↗</b></p>
+                <span class="ph-btn"><svg><use href="#i-calendar"/></svg>Book a viewing</span>
+              </div>
+            </div>
+            <div class="ph-card">
+              <div class="ph-img"><svg viewBox="0 0 120 80"><use href="#m-desk"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <span class="stage-tag t1"><svg aria-hidden="true"><use href="#i-qr"/></svg><span lang="fr">Scanne-moi, je marche</span><span lang="en">Scan me, I work</span></span>
+      <span class="stage-tag t2"><svg aria-hidden="true"><use href="#i-link"/></svg><span lang="fr">Un lien pour tout l'inventaire</span><span lang="en">One link, whole inventory</span></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== HISTOIRE ============================== -->
+<section class="alt" id="histoire">
+  <div class="wrap">
+    <div class="story-grid">
+      <div class="story-aside">
+        <div>
+          <p class="eyebrow"><span lang="fr">L'histoire</span><span lang="en">The story</span></p>
+          <h2>
+            <span lang="fr">Né à Odense, d'un appart à vider.</span>
+            <span lang="en">Born in Odense, from a flat to empty.</span>
+          </h2>
+        </div>
+        <div class="dict">
+          <p class="dict-word">møbel</p>
+          <p class="dict-meta"><span lang="fr">nom · danois</span><span lang="en">noun · Danish</span></p>
+          <p class="dict-def" lang="fr"><b>Meuble.</b> Le mot du pays où tout a commencé, et le nom de ce projet.</p>
+          <p class="dict-def" lang="en"><b>A piece of furniture.</b> The word from the country where it all started, and the name of this project.</p>
+        </div>
+      </div>
+
+      <div>
+        <ol class="chapters">
+          <li class="chapter">
+            <h3><span lang="fr">Une date de départ</span><span lang="en">A date to leave</span></h3>
+            <p lang="fr">Mon stage au Danemark se terminait le 20&nbsp;novembre. Lit, matelas, télé, micro-ondes, chaises&nbsp;: tout un appartement devait trouver preneur avant que je prenne l'avion.</p>
+            <p lang="en">My internship in Denmark ended on 20 November. Bed, mattress, TV, microwave, chairs: a whole flat had to find new owners before my flight.</p>
+          </li>
+          <li class="chapter">
+            <h3><span lang="fr">Une porte fermée</span><span lang="en">A closed door</span></h3>
+            <p lang="fr">Au Danemark, on vend ses meubles sur le site d'annonces local. Sauf que, comme beaucoup de gens de passage, je n'y avais pas accès. Il fallait trouver les acheteurs autrement.</p>
+            <p lang="en">In Denmark, people sell furniture on the local classifieds site. Like many people just passing through, I couldn't use it. The buyers had to be found another way.</p>
+          </li>
+          <li class="chapter">
+            <h3><span lang="fr">La force des groupes d'expats</span><span lang="en">The power of expat groups</span></h3>
+            <p lang="fr">Je les ai trouvés dans les groupes Facebook d'étrangers et d'étudiants&nbsp;: chaque semaine, quelqu'un arrive et doit tout racheter. Mais vingt annonces postées une par une, ce sont vingt posts noyés dans le fil. Il me fallait un seul lien&nbsp;: tout l'inventaire, les photos, les prix, et un bouton pour réserver.</p>
+            <p lang="en">I found them in Facebook groups for internationals and students: every week someone new arrives and needs everything. But twenty listings posted one by one are twenty posts lost in the feed. I needed a single link: the whole inventory, photos, prices and a button to book.</p>
+          </li>
+          <li class="chapter">
+            <h3><span lang="fr">Une affiche dans le hall</span><span lang="en">A poster in the hallway</span></h3>
+            <p lang="fr">Les voisins passent devant la porte d'entrée tous les jours. Une affiche A4, la liste des prix, un QR code&nbsp;: on scanne, on voit tout, on choisit un créneau.</p>
+            <p lang="en">Neighbours walk past the front door every day. An A4 poster, a price list, a QR code: scan, see everything, pick a time.</p>
+          </li>
+          <li class="chapter">
+            <h3><span lang="fr">Et partout ailleurs</span><span lang="en">And everywhere else</span></h3>
+            <p lang="fr">Un meuble est aussi sur Marketplace, DBA, Leboncoin ou Vinted&nbsp;? Sa fiche renvoie vers ces annonces. La boutique devient la vitrine qui relie tout le reste.</p>
+            <p lang="en">Is an item also on Marketplace, DBA, Leboncoin or Vinted? Its card links there. The shop becomes the window that ties everything together.</p>
+          </li>
+        </ol>
+        <div class="quote">
+          <p lang="fr">J'ai écrit ce site pour ma vente. Je l'ouvre pour la tienne.</p>
+          <p lang="en">I built it for my own sale. Now it's open for yours.</p>
+          <small><span lang="fr">Odense, Danemark · novembre 2026</span><span lang="en">Odense, Denmark · November 2026</span></small>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FONCTIONS ============================= -->
+<section id="fonctions">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow"><span lang="fr">Ce que ça fait</span><span lang="en">What it does</span></p>
+      <h2><span lang="fr">Trois canaux, une seule boutique.</span><span lang="en">Three channels, one shop.</span></h2>
+      <p class="lede" lang="fr">Le lien pour les groupes, l'affiche pour le quartier, les liens vers les autres sites&nbsp;: tout mène au même inventaire, toujours à jour. Ce qui est vendu disparaît tout seul.</p>
+      <p class="lede" lang="en">The link for groups, the poster for the neighbourhood, the links to other sites: everything leads to the same inventory, always up to date. Sold items disappear on their own.</p>
+    </div>
+
+    <!-- 1. lien -->
+    <div class="feature">
+      <div class="feature-text">
+        <p class="feature-num">01 · <span lang="fr">Partager</span><span lang="en">Share</span></p>
+        <h3><span lang="fr">Un lien pour les groupes Facebook</span><span lang="en">One link for community groups</span></h3>
+        <p lang="fr">Poste l'adresse de ta boutique dans les groupes d'expats, d'étudiants ou de ton immeuble. Les acheteurs voient tout d'un coup d'œil&nbsp;: photos, prix, état, nombre d'exemplaires.</p>
+        <p lang="en">Post your shop's address in expat, student or building groups. Buyers see everything at a glance: photos, prices, condition, how many are left.</p>
+        <ul class="ticks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Jusqu'à 8 photos par meuble, galerie au doigt sur téléphone</span><span lang="en">Up to 8 photos per item, swipeable on phones</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Chaque fiche peut renvoyer vers Marketplace, DBA, Leboncoin, Vinted</span><span lang="en">Each card can link to Marketplace, DBA, Leboncoin, Vinted</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Boutique en anglais, lisible par tous les nouveaux arrivants</span><span lang="en">Shop in English, readable by every newcomer</span></li>
+        </ul>
+      </div>
+      <div class="visual">
+        <div class="post" aria-hidden="true">
+          <div class="post-head">
+            <span class="avatar"></span>
+            <div><b>Internationals · Buy &amp; Sell</b><small>2 h · Odense</small></div>
+          </div>
+          <p class="post-text">Leaving Denmark on 20 Nov, everything must go! Full list with photos and prices, book a viewing in two taps 👇</p>
+          <div class="post-link">
+            <small>tom7053.github.io</small>
+            <b>Furniture for sale — Odense</b>
+            <span>Furniture for sale before 20 November. Book a viewing.</span>
+          </div>
+        </div>
+        <div class="also-strip" aria-hidden="true">
+          <span>Also on</span>
+          <span class="pill">Facebook Marketplace <svg><use href="#i-external"/></svg></span>
+          <span class="pill">DBA <svg><use href="#i-external"/></svg></span>
+          <span class="pill">Leboncoin <svg><use href="#i-external"/></svg></span>
+          <span class="pill">Vinted <svg><use href="#i-external"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. affiche -->
+    <div class="feature flip">
+      <div class="feature-text">
+        <p class="feature-num">02 · <span lang="fr">Afficher</span><span lang="en">Print</span></p>
+        <h3><span lang="fr">Une affiche avec QR code, prête à imprimer</span><span lang="en">A print-ready QR-code poster</span></h3>
+        <p lang="fr">Coche les meubles à mettre en avant, clique sur un texte pour le modifier, choisis une affiche A4 ou deux A5 par feuille. Le QR code renvoie vers ta boutique, et l'onglet Stats estime combien de personnes l'ont scanné.</p>
+        <p lang="en">Tick the items to feature, click any text to edit it, pick one A4 poster or two A5 per sheet. The QR code points to your shop, and the Stats tab estimates how many people scanned it.</p>
+        <ul class="ticks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Le haut de l'affiche rétrécit tout seul si la liste est trop longue</span><span lang="en">The top shrinks by itself when the list gets long</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Moyens de paiement affichés au choix (Revolut, Cash, MobilePay…)</span><span lang="en">Choose which payment methods to show (Revolut, Cash, MobilePay…)</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Marge de 6&nbsp;mm prévue&nbsp;: ce que tu vois est ce qui sort</span><span lang="en">6 mm safe margin built in: what you see is what prints</span></li>
+        </ul>
+      </div>
+      <div class="visual">
+        <div class="poster-demo">
+          <div class="seg" role="group" aria-label="Format">
+            <button type="button" data-format="one" aria-pressed="true"><span lang="fr">1 par feuille</span><span lang="en">1 per sheet</span></button>
+            <button type="button" data-format="two" aria-pressed="false"><span lang="fr">2 par feuille</span><span lang="en">2 per sheet</span></button>
+          </div>
+          <div class="sheet is-editable" id="poster-sheet">
+            <div class="slot" data-poster="a"></div>
+            <div class="slot" data-poster="b"></div>
+          </div>
+          <p class="hint"><svg aria-hidden="true"><use href="#i-pencil"/></svg>
+            <span lang="fr">Essaie&nbsp;: clique sur le titre et change-le.</span>
+            <span lang="en">Try it: click the title and change it.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. rendez-vous -->
+    <div class="feature">
+      <div class="feature-text">
+        <p class="feature-num">03 · <span lang="fr">Réserver</span><span lang="en">Book</span></p>
+        <h3><span lang="fr">Des rendez-vous, pas des allers-retours</span><span lang="en">Bookings, not back-and-forth</span></h3>
+        <p lang="fr">Tu fixes tes jours d'ouverture, tes créneaux et tes jours fermés. L'acheteur choisit un créneau libre, le nombre d'exemplaires et la façon de payer. Toi, tu reçois l'alerte à la seconde, même site fermé.</p>
+        <p lang="en">You set your opening days, time slots and days off. Buyers pick a free slot, how many they want and how they'll pay. You get the alert within a second, even with the site closed.</p>
+        <ul class="ticks">
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Alerte en temps réel dans l'espace vendeur (Supabase Realtime)</span><span lang="en">Real-time alert in the seller space (Supabase Realtime)</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Notification push via ntfy ou e-mail via Resend, gratuits</span><span lang="en">Push via ntfy or email via Resend, both free</span></li>
+          <li><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">Les numéros de téléphone ne sont lisibles que par toi</span><span lang="en">Phone numbers are readable by you only</span></li>
+        </ul>
+      </div>
+      <div class="visual">
+        <div class="booking-demo" aria-hidden="true">
+          <div class="bk">
+            <p class="bk-title">Book a viewing</p>
+            <p class="bk-sub">Oak desk — IKEA · 450 kr</p>
+            <p class="bk-label">Day</p>
+            <div class="bk-days">
+              <span class="bk-day">Mon<b>9</b></span>
+              <span class="bk-day">Tue<b>10</b></span>
+              <span class="bk-day">Wed<b>11</b></span>
+              <span class="bk-day on">Thu<b>12</b></span>
+              <span class="bk-day">Fri<b>13</b></span>
+            </div>
+            <p class="bk-label">Time</p>
+            <div class="bk-slots">
+              <span class="bk-slot">16:00</span>
+              <span class="bk-slot on">17:00</span>
+              <span class="bk-slot off">18:00</span>
+            </div>
+            <p class="bk-label">How will you pay?</p>
+            <div class="bk-pay">
+              <span class="on"><i class="radio"></i>Revolut instant transfer</span>
+              <span><i class="radio"></i>Cash</span>
+            </div>
+            <span class="ph-btn"><svg><use href="#i-calendar"/></svg>Request this viewing</span>
+          </div>
+          <div class="toast">
+            <span class="toast-icon"><svg><use href="#i-bell"/></svg></span>
+            <div>
+              <small><span lang="fr">Espace vendeur</span><span lang="en">Seller space (French for now)</span></small>
+              Nouveau rendez-vous — Anna, jeudi 12 novembre à 17:00
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. description -->
+    <div class="feature" style="display:block">
+      <div class="feature-text" style="max-width:760px">
+        <p class="feature-num">04 · <span lang="fr">Décrire</span><span lang="en">Describe</span></p>
+        <h3><span lang="fr">Des descriptions en anglais, sans IA</span><span lang="en">English descriptions, no AI</span></h3>
+        <p lang="fr">Pas besoin d'être à l'aise en anglais&nbsp;: choisis le type, la matière, l'état, le prix payé neuf, et la description s'écrit toute seule avec des phrases toutes faites. Chaque annonce reçoit ses propres tournures, et «&nbsp;Reformuler&nbsp;» en propose d'autres. Essaie, c'est le vrai code qui tourne ci-dessous.</p>
+        <p lang="en">No need to be confident in English: pick the type, material, condition and the price you paid new, and the description writes itself from ready-made sentences. Each listing gets its own wording, and "Rephrase" offers another. Try it, the real code is running below.</p>
+      </div>
+      <div class="gen" id="generator">
+        <div class="gen-form">
+          <div class="fields">
+            <div class="field"><label for="g-kind">Type</label><select id="g-kind" data-key="kind"></select></div>
+            <div class="field"><label for="g-material"><span lang="fr">Matière</span><span lang="en">Material</span></label><select id="g-material" data-key="material"></select></div>
+            <div class="field"><label for="g-colour"><span lang="fr">Couleur</span><span lang="en">Colour</span></label><select id="g-colour" data-key="colour"></select></div>
+            <div class="field"><label for="g-brand"><span lang="fr">Marque</span><span lang="en">Brand</span></label><input id="g-brand" data-key="brand" autocomplete="off"></div>
+            <div class="field"><label for="g-year"><span lang="fr">Acheté en</span><span lang="en">Bought in</span></label><input id="g-year" data-key="year" inputmode="numeric" autocomplete="off"></div>
+            <div class="field"><label for="g-condition"><span lang="fr">État</span><span lang="en">Condition</span></label><select id="g-condition" data-key="condition"></select></div>
+            <div class="field"><label for="g-paid"><span lang="fr">Payé neuf (kr)</span><span lang="en">Paid new (kr)</span></label><input id="g-paid" data-key="paid" inputmode="numeric" autocomplete="off"></div>
+            <div class="field"><label for="g-price"><span lang="fr">Prix demandé (kr)</span><span lang="en">Asking (kr)</span></label><input id="g-price" data-key="price" inputmode="numeric" autocomplete="off"></div>
+            <div class="field span2">
+              <label for="g-width"><span lang="fr">Dimensions (cm)</span><span lang="en">Size (cm)</span></label>
+              <div class="size-row">
+                <input id="g-width" data-key="width" inputmode="numeric" aria-label="W" autocomplete="off"><span>×</span>
+                <input data-key="depth" inputmode="numeric" aria-label="D" autocomplete="off"><span>×</span>
+                <input data-key="height" inputmode="numeric" aria-label="H" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div class="groups">
+            <div><p class="group-label"><span lang="fr">Atouts</span><span lang="en">Highlights</span></p><div class="chips" data-chips="features"></div></div>
+            <div><p class="group-label"><span lang="fr">Défauts</span><span lang="en">Flaws</span></p><div class="chips" data-chips="flaws"></div></div>
+            <div><p class="group-label"><span lang="fr">Maison et transport</span><span lang="en">Home and pickup</span></p><div class="chips" data-chips="other"></div></div>
+          </div>
+        </div>
+        <div class="gen-out" aria-live="polite">
+          <span class="gen-badge"><svg aria-hidden="true"><use href="#i-check"/></svg><span lang="fr">0 appel à une IA · tourne dans ton navigateur</span><span lang="en">0 AI calls · runs in your browser</span></span>
+          <div class="ph-row" style="align-items:baseline">
+            <p class="gen-title" id="g-out-title"></p>
+            <p class="gen-price" id="g-out-price"></p>
+          </div>
+          <p class="gen-text" id="g-out-text"></p>
+          <div class="gen-foot">
+            <span class="gen-ver" id="g-out-ver"></span>
+            <button type="button" class="btn btn-ghost" id="g-rephrase" style="min-height:42px">
+              <svg aria-hidden="true"><use href="#i-refresh"/></svg>
+              <span lang="fr">Reformuler</span><span lang="en">Rephrase</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- et aussi -->
+    <div class="and-also">
+      <h3><span lang="fr">Et aussi</span><span lang="en">And also</span></h3>
+      <div class="cards">
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-chart"/></svg></span>
+          <h4><span lang="fr">Des stats sans cookie</span><span lang="en">Cookie-free stats</span></h4>
+          <p lang="fr">Visites, scans estimés du QR code, d'où viennent les visiteurs, meubles les plus regardés. Un numéro au hasard par onglet, rien d'autre.</p>
+          <p lang="en">Visits, estimated QR scans, where visitors come from, most viewed items. One random number per tab, nothing else.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-target"/></svg></span>
+          <h4><span lang="fr">Objectif et prix négociés</span><span lang="en">Goal and haggled prices</span></h4>
+          <p lang="fr">Note le prix vraiment obtenu à chaque vente. La barre d'objectif compte ce que tu as encaissé, écart de négociation compris.</p>
+          <p lang="en">Record the price you actually got for each sale. The goal bar counts what you really cashed in, haggling included.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-copies"/></svg></span>
+          <h4><span lang="fr">Plusieurs exemplaires</span><span lang="en">Several of the same</span></h4>
+          <p lang="fr">Deux lits identiques&nbsp;? Une seule annonce, «&nbsp;0 vendu sur 2&nbsp;». L'acheteur choisit combien il en prend.</p>
+          <p lang="en">Two identical beds? One listing, "0 sold of 2". Buyers choose how many they take.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-lock"/></svg></span>
+          <h4><span lang="fr">Données protégées par RLS</span><span lang="en">Data protected by RLS</span></h4>
+          <p lang="fr">Tout le monde peut lire les annonces et réserver. Seul ton compte connecté lit les prénoms et les numéros.</p>
+          <p lang="en">Anyone can read listings and book. Only your signed-in account can read names and phone numbers.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-image"/></svg></span>
+          <h4><span lang="fr">Rapide sur téléphone</span><span lang="en">Fast on phones</span></h4>
+          <p lang="fr">Photos redimensionnées dans le navigateur (~100&nbsp;Ko). Seules les couvertures se chargent avec la liste, le reste à la demande.</p>
+          <p lang="en">Photos are resized in the browser (~100 KB). Only covers load with the list, the rest on demand.</p>
+        </div>
+        <div class="card">
+          <span class="card-icon"><svg aria-hidden="true"><use href="#i-zero"/></svg></span>
+          <h4><span lang="fr">0&nbsp;€, vraiment</span><span lang="en">€0, really</span></h4>
+          <p lang="fr">GitHub Pages pour le site, l'offre gratuite de Supabase pour les données, et une GitHub Action quotidienne qui empêche la mise en pause.</p>
+          <p lang="en">GitHub Pages for the site, Supabase's free tier for data, and a daily GitHub Action that keeps the project from pausing.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================ CODE ================================ -->
+<section class="alt" id="code">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow"><span lang="fr">Sous le capot</span><span lang="en">Under the hood</span></p>
+      <h2><span lang="fr">Un fichier HTML. C'est tout.</span><span lang="en">One HTML file. That's it.</span></h2>
+      <p class="lede" lang="fr">Pas de npm, pas de build, pas de serveur à payer. React, Tailwind et Babel arrivent par CDN&nbsp;; Supabase s'occupe de la base, de la connexion vendeur et du temps réel. Tout le reste tient dans <code>index.html</code>, et se lit comme un livre&nbsp;: chaque bloc est commenté.</p>
+      <p class="lede" lang="en">No npm, no build, no server to pay for. React, Tailwind and Babel come from a CDN; Supabase handles the database, seller sign-in and real-time. Everything else lives in <code>index.html</code> and reads like a book: every block is commented (in French, for now).</p>
+      <div class="stack">
+        <span>React 18</span><span>Tailwind CSS</span><span>Babel standalone</span><span>Supabase</span><span>PostgreSQL + RLS</span><span>qrcode.js</span><span>GitHub Pages</span><span>GitHub Actions</span>
+      </div>
+    </div>
+
+    <div class="arch" role="img" aria-label="Le lien et le QR code mènent à index.html sur GitHub Pages, qui lit et écrit dans Supabase. Une GitHub Action garde Supabase éveillé ; ntfy ou Resend envoient les alertes.">
+      <div class="arch-col">
+        <div class="node"><b><span lang="fr">Lien partagé</span><span lang="en">Shared link</span></b><small><span lang="fr">groupes Facebook, WhatsApp…</span><span lang="en">Facebook groups, WhatsApp…</span></small></div>
+        <div class="node"><b>QR code</b><small><span lang="fr">l'affiche dans le hall</span><span lang="en">the hallway poster</span></small></div>
+      </div>
+      <div class="arrow"><svg><use href="#i-right"/></svg></div>
+      <div class="node node-main">
+        <b>GitHub Pages</b>
+        <small><span lang="fr">la boutique + l'espace vendeur</span><span lang="en">the shop + the seller space</span></small>
+        <span class="file"><svg><use href="#i-file"/></svg>index.html</span>
+      </div>
+      <div class="arrow"><svg><use href="#i-both"/></svg></div>
+      <div class="arch-col">
+        <div class="node node-main">
+          <b>Supabase</b>
+          <small>Postgres + RLS · Auth · Realtime</small>
+        </div>
+        <div class="arch-sub">
+          <div class="node node-aux"><b>GitHub Actions</b><small><span lang="fr">ping chaque matin</span><span lang="en">daily ping</span></small></div>
+          <div class="node node-aux"><b>ntfy · Resend</b><small><span lang="fr">alertes hors ligne</span><span lang="en">offline alerts</span></small></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="code-tabs">
+      <div class="tablist" role="tablist" aria-label="Extraits de code">
+        <button class="tab" role="tab" id="t-config" aria-controls="p-config" aria-selected="true"><b><span lang="fr">Les 2 lignes à remplir</span><span lang="en">The 2 lines to fill in</span></b><small>index.html</small></button>
+        <button class="tab" role="tab" id="t-pick" aria-controls="p-pick" aria-selected="false" tabindex="-1"><b><span lang="fr">Descriptions sans IA</span><span lang="en">Descriptions, no AI</span></b><small>pick() · describeItem()</small></button>
+        <button class="tab" role="tab" id="t-qr" aria-controls="p-qr" aria-selected="false" tabindex="-1"><b><span lang="fr">Le QR code de l'affiche</span><span lang="en">The poster's QR code</span></b><small>useQrCode()</small></button>
+        <button class="tab" role="tab" id="t-stats" aria-controls="p-stats" aria-selected="false" tabindex="-1"><b><span lang="fr">Compter les scans</span><span lang="en">Counting scans</span></b><small>startStats()</small></button>
+        <button class="tab" role="tab" id="t-rt" aria-controls="p-rt" aria-selected="false" tabindex="-1"><b><span lang="fr">Alerte en temps réel</span><span lang="en">Real-time alert</span></b><small>bookings-feed</small></button>
+        <button class="tab" role="tab" id="t-keep" aria-controls="p-keep" aria-selected="false" tabindex="-1"><b><span lang="fr">Garder Supabase éveillé</span><span lang="en">Keeping Supabase awake</span></b><small>supabase-keepalive.yml</small></button>
+      </div>
+
+      <div>
+        <div class="panel" role="tabpanel" id="p-config" aria-labelledby="t-config">
+          <p class="panel-text" lang="fr">Toute la configuration. La clé <code>anon</code> est publique par conception&nbsp;: ce sont les règles RLS de la base qui protègent les prénoms et les numéros des acheteurs. La clé <code>service_role</code>, elle, ne va jamais ici.</p>
+          <p class="panel-text" lang="en">The entire configuration. The <code>anon</code> key is public by design: the database's RLS rules are what protect buyers' names and numbers. The <code>service_role</code> key never goes here.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-html"><code class="language-html">&lt;script&gt;
+  window.CONFIG = {
+    SUPABASE_URL: 'https://TON-PROJET.supabase.co',
+    SUPABASE_ANON_KEY: 'COLLE-ICI-TA-CLE-ANON'
+  };
+&lt;/script&gt;</code></pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-pick" aria-labelledby="t-pick" hidden>
+          <p class="panel-text" lang="fr">Chaque phrase existe en plusieurs tournures. Un petit hash déterministe choisit laquelle à partir du numéro de version de l'annonce&nbsp;: la même annonce garde son texte, «&nbsp;Reformuler&nbsp;» change juste le numéro. Et le prix payé neuf fait apparaître l'économie.</p>
+          <p class="panel-text" lang="en">Every sentence comes in several wordings. A small deterministic hash picks one from the listing's version number: the same listing keeps its text, "Rephrase" just changes the number. And the price paid new turns into a saving.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-javascript"><code class="language-javascript">// Choisit une des tournures, toujours la même pour un même numéro de
+// version et une même place dans le texte (`slot`).
+function pick(options, version, slot) {
+  let h = Math.imul(version | 0, 0x9e3779b1);
+  for (let i = 0; i &lt; slot.length; i++) h = Math.imul(h ^ slot.charCodeAt(i), 0x01000193);
+  h ^= h &gt;&gt;&gt; 15;
+  return options[(h &gt;&gt;&gt; 0) % options.length];
+}
+
+// L'âge et le prix neuf font voir la bonne affaire.
+const paid = priceValue(d.paid);
+const asking = priceValue(item.price);
+if (paid &gt; 0) {
+  const off = asking &gt; 0 &amp;&amp; asking &lt; paid ? Math.round((1 - asking / paid) * 100) : 0;
+  sentences.push(off &gt;= 10
+    ? say([`I paid ${fmtKr(paid)} for it new, so you save ${off}%.`,
+           `It cost ${fmtKr(paid)} new: you pay ${off}% less.`], 'paid')
+    : say([`It cost ${fmtKr(paid)} new.`, `I paid ${fmtKr(paid)} for it new.`], 'paid'));
+}</code></pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-qr" aria-labelledby="t-qr" hidden>
+          <p class="panel-text" lang="fr">L'affiche est un composant React imprimé tel quel. Le QR code est dessiné par qrcode.js dans un <code>div</code> jetable, puis converti en image&nbsp;: il suit l'adresse de la page, donc il marche aussi sur ton fork sans rien changer.</p>
+          <p class="panel-text" lang="en">The poster is a React component printed as is. The QR code is drawn by qrcode.js into a throwaway <code>div</code>, then turned into an image: it follows the page's address, so it works on your fork with no changes.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-jsx"><code class="language-jsx">// QR code en image, dessiné par qrcode.js dans un div jetable.
+function useQrCode(text) {
+  const [src, setSrc] = useState(null);
+  useEffect(() =&gt; {
+    if (!text || typeof QRCode === 'undefined') { setSrc(null); return; }
+    try {
+      const box = document.createElement('div');
+      new QRCode(box, {
+        text, width: 512, height: 512,
+        colorDark: '#16307a', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      const canvas = box.querySelector('canvas');
+      setSrc(canvas ? canvas.toDataURL('image/png') : null);
+    } catch { setSrc(null); }
+  }, [text]);
+  return src;
+}</code></pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-stats" aria-labelledby="t-stats" hidden>
+          <p class="panel-text" lang="fr">Pas de cookie, pas d'outil externe. Le QR code mène à l'adresse nue du site&nbsp;: une arrivée sur téléphone, sans site d'origine et sans rien après l'adresse, compte comme un scan probable. Une estimation honnête, et assumée dans les commentaires.</p>
+          <p class="panel-text" lang="en">No cookies, no third-party tool. The QR code points to the bare site address: a phone visit with no referrer and nothing after the address counts as a likely scan. An honest estimate, and the comments say so.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-javascript"><code class="language-javascript">// Une visite. Le QR code de l'affiche mène à l'adresse nue du site : une
+// arrivée sur téléphone, sans site d'origine et sans rien après l'adresse,
+// compte comme un scan. C'est une estimation : taper l'adresse à la main
+// sur son téléphone compte aussi.
+let source = null;
+try { source = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : null; } catch { /* lien illisible */ }
+if (source === location.hostname) source = null;
+const mobile = !!(window.matchMedia &amp;&amp; window.matchMedia('(pointer: coarse)').matches);
+track('visit', null, { source, mobile, qr: !source &amp;&amp; mobile &amp;&amp; !location.search &amp;&amp; !location.hash });</code></pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-rt" aria-labelledby="t-rt" hidden>
+          <p class="panel-text" lang="fr">Tant que l'espace vendeur est ouvert, chaque nouvelle ligne dans <code>bookings</code> arrive en direct et s'affiche en alerte. Pour être prévenu site fermé, <code>notifications.sql</code> fait la même chose côté base, vers ntfy ou un e-mail.</p>
+          <p class="panel-text" lang="en">While the seller space is open, every new row in <code>bookings</code> streams in live and pops up as an alert. To be notified with the site closed, <code>notifications.sql</code> does the same on the database side, to ntfy or email.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-javascript"><code class="language-javascript">const channel = sb
+  .channel('bookings-feed')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) =&gt; {
+    const b = payload.new;
+    setBookings((prev) =&gt; (prev.some((x) =&gt; x.id === b.id) ? prev : [...prev, b]));
+    setBusy((prev) =&gt; [...prev, { day: b.day, slot: b.slot }]);
+    pushToast(`Nouveau rendez-vous — ${b.first_name}, ${fmtDate(b.day, 'fr-FR')} à ${b.slot}`, 'new');
+  })
+  .subscribe();</code></pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-keep" aria-labelledby="t-keep" hidden>
+          <p class="panel-text" lang="fr">Supabase met en pause les projets gratuits restés une semaine sans activité. Une GitHub Action lit une ligne chaque matin&nbsp;: le projet reste éveillé, gratuitement. Si ça échoue, GitHub prévient par e-mail.</p>
+          <p class="panel-text" lang="en">Supabase pauses free projects after a week without activity. A GitHub Action reads one row every morning: the project stays awake, for free. If it fails, GitHub sends an email.</p>
+          <div class="codebox">
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>.github/workflows/supabase-keepalive.yml<a href="https://github.com/Tom7053/meubles/blob/main/.github/workflows/supabase-keepalive.yml"><span lang="fr">Voir ↗</span><span lang="en">View ↗</span></a></div>
+<pre class="language-yaml"><code class="language-yaml">on:
+  schedule:
+    - cron: '17 6 * * *'   # tous les jours vers 7 h 17 (heure du Danemark en hiver)
+  workflow_dispatch:       # bouton « Run workflow » pour tester à la main
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lire une ligne de la table items
+        run: |
+          curl --fail-with-body --silent --show-error --retry 3 \
+            "$SUPABASE_URL/rest/v1/items?select=id&amp;limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY"</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== INSTALLER ============================= -->
+<section id="installer">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow"><span lang="fr">Installer</span><span lang="en">Set up</span></p>
+      <h2><span lang="fr">Ta boutique en 15 minutes.</span><span lang="en">Your shop in 15 minutes.</span></h2>
+      <p class="lede" lang="fr">Aucune ligne de commande. Un compte GitHub, un compte Supabase, et c'est parti. Le <a href="https://github.com/Tom7053/meubles#readme">README</a> détaille chaque écran.</p>
+      <p class="lede" lang="en">No command line. A GitHub account, a Supabase account, and you're off. The <a href="https://github.com/Tom7053/meubles#readme">README</a> walks through every screen (in French).</p>
+    </div>
+
+    <ol class="steps">
+      <li class="step">
+        <h4><span lang="fr">Copie le dépôt</span><span lang="en">Copy the repository</span></h4>
+        <p lang="fr"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> le projet sur ton compte GitHub. Tout le site est dans <code>index.html</code>.</p>
+        <p lang="en"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> the project to your GitHub account. The whole site is in <code>index.html</code>.</p>
+      </li>
+      <li class="step">
+        <h4><span lang="fr">Crée la base Supabase</span><span lang="en">Create the Supabase database</span></h4>
+        <p lang="fr">Nouveau projet sur <a href="https://supabase.com">supabase.com</a> (région Europe), puis <b>SQL Editor</b>&nbsp;: colle <code>schema.sql</code> et clique sur <b>Run</b>.</p>
+        <p lang="en">New project on <a href="https://supabase.com">supabase.com</a> (an EU region), then <b>SQL Editor</b>: paste <code>schema.sql</code> and hit <b>Run</b>.</p>
+      </li>
+      <li class="step">
+        <h4><span lang="fr">Crée ton compte vendeur</span><span lang="en">Create your seller account</span></h4>
+        <p lang="fr"><b>Authentication → Users → Add user</b>, coche <i>Auto Confirm</i>. Puis désactive les inscriptions&nbsp;: personne d'autre ne pourra créer de compte.</p>
+        <p lang="en"><b>Authentication → Users → Add user</b>, tick <i>Auto Confirm</i>. Then turn off sign-ups: nobody else can create an account.</p>
+      </li>
+      <li class="step">
+        <h4><span lang="fr">Branche le site</span><span lang="en">Connect the site</span></h4>
+        <p lang="fr">Dans <b>Project Settings → Data API</b>, copie l'URL et la clé anon dans <code>index.html</code>.</p>
+        <p lang="en">From <b>Project Settings → Data API</b>, copy the URL and anon key into <code>index.html</code>.</p>
+        <div class="codebox">
+          <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<button type="button" class="copy grow" data-copy>Copy</button></div>
+<pre class="language-javascript"><code class="language-javascript">SUPABASE_URL: 'https://abcdefgh.supabase.co',
+SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
+        </div>
+      </li>
+      <li class="step">
+        <h4><span lang="fr">Publie avec GitHub Pages</span><span lang="en">Publish with GitHub Pages</span></h4>
+        <p lang="fr"><b>Settings → Pages</b>, branche <code>main</code>, dossier <code>/ (root)</code>. Une minute plus tard, ta boutique est en ligne. Colle aussi cette adresse dans Supabase (<b>URL Configuration → Site URL</b>).</p>
+        <p lang="en"><b>Settings → Pages</b>, branch <code>main</code>, folder <code>/ (root)</code>. A minute later your shop is live. Paste that address into Supabase too (<b>URL Configuration → Site URL</b>).</p>
+        <div class="codebox">
+          <div class="codebar"><span class="dots"><i></i><i></i><i></i></span><span lang="fr">ton adresse</span><span lang="en">your address</span><button type="button" class="copy grow" data-copy>Copy</button></div>
+<pre class="plain"><code>https://TON-PSEUDO.github.io/meubles/</code></pre>
+        </div>
+      </li>
+      <li class="step">
+        <h4><span lang="fr">Ajoute tes meubles, imprime, partage</span><span lang="en">Add items, print, share</span></h4>
+        <p lang="fr">Ouvre <code>…/meubles/#vendeur</code>, connecte-toi, ajoute tes meubles. Onglet <b>Affiche</b>&nbsp;: imprime. Puis poste le lien dans tes groupes.</p>
+        <p lang="en">Open <code>…/meubles/#vendeur</code>, sign in, add your items. <b>Affiche</b> (poster) tab: print. Then post the link in your groups.</p>
+      </li>
+    </ol>
+    <div class="note">
+      <svg aria-hidden="true"><use href="#i-info"/></svg>
+      <p lang="fr"><b>Fixe ton adresse avant d'imprimer.</b> Le QR code de l'affiche pointe vers l'adresse GitHub Pages&nbsp;: si tu renommes le dépôt, les affiches déjà collées ne mènent plus nulle part.</p>
+      <p lang="en"><b>Settle your address before printing.</b> The poster's QR code points to the GitHub Pages address: rename the repository and the posters already on the wall lead nowhere.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= CONTRIBUER ============================= -->
+<section class="alt" id="contribuer">
+  <div class="wrap">
+    <div class="contrib-top">
+      <div>
+        <p class="eyebrow"><span lang="fr">Contribuer</span><span lang="en">Contribute</span></p>
+        <h2><span lang="fr">Écrit pour une vente. Prêt à voyager.</span><span lang="en">Built for one sale. Ready to travel.</span></h2>
+      </div>
+      <p class="lede" lang="fr">Aujourd'hui, møbel parle couronnes danoises, son espace vendeur parle français et sa date de fin est écrite en dur. Parfait pour Odense, moins pour Lisbonne, Montréal ou Berlin. Chaque idée ci-dessous rend l'outil utile à la prochaine personne qui déménage.</p>
+      <p class="lede" lang="en">Today, møbel speaks Danish kroner, its seller space speaks French and its end date is hard-coded. Perfect for Odense, less so for Lisbon, Montreal or Berlin. Each idea below makes the tool useful for the next person moving out.</p>
+    </div>
+
+    <div class="issues">
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">config</span></div>
+        <h4><span lang="fr">Devise et format des prix au choix</span><span lang="en">Configurable currency and price format</span></h4>
+        <p lang="fr">« kr » et le format danois sont écrits en dur. Les déplacer dans <code>CONFIG</code> ouvre la porte aux euros, francs suisses, zlotys…</p>
+        <p lang="en">"kr" and Danish number formatting are hard-coded. Moving them to <code>CONFIG</code> opens the door to euros, Swiss francs, złoty…</p>
+        <div class="issue-code"><code>fmtKr()</code><code>withKr()</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">config</span></div>
+        <h4><span lang="fr">Date de fin et objectif dans la config</span><span lang="en">End date and goal in the config</span></h4>
+        <p lang="fr">La date limite des rendez-vous et l'objectif de vente sont des constantes. Les rendre réglables depuis l'onglet Planning, ce serait mieux.</p>
+        <p lang="en">The last booking day and the sales goal are constants. Making them editable from the Planning tab would be better.</p>
+        <div class="issue-code"><code>LAST_DAY</code><code>SALES_GOAL</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">sharing</span></div>
+        <h4><span lang="fr">Belle carte d'aperçu sur Facebook</span><span lang="en">A proper link preview on Facebook</span></h4>
+        <p lang="fr">Posté dans un groupe, le lien de la boutique n'a pas d'image. Des balises Open Graph (et une image générée) le feraient sortir du lot.</p>
+        <p lang="en">Posted in a group, the shop link shows no image. Open Graph tags (and a generated image) would make it stand out.</p>
+        <div class="issue-code"><code>og:image</code><code>og:title</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">payments</span></div>
+        <h4><span lang="fr">Plus de moyens de paiement</span><span lang="en">More payment methods</span></h4>
+        <p lang="fr">Vipps, Swish, Wero, Lydia, Twint… Ajouter un moyen, c'est une ligne en JS et une ligne en SQL.</p>
+        <p lang="en">Vipps, Swish, Wero, Lydia, Twint… Adding one is a line of JS and a line of SQL.</p>
+        <div class="issue-code"><code>PAYMENT_METHODS</code><code>migration-paiement.sql</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
+        <div class="labels"><span class="label hw">help wanted</span><span class="label tag">i18n</span></div>
+        <h4><span lang="fr">Espace vendeur en anglais (et plus)</span><span lang="en">Seller space in English (and more)</span></h4>
+        <p lang="fr">L'espace vendeur et les commentaires du code sont en français. Une petite couche de traduction ouvrirait møbel à tout le monde.</p>
+        <p lang="en">The seller space and the code comments are in French. A small translation layer would open møbel to everyone.</p>
+        <div class="issue-code"><code>DAYS_FR</code><code>Admin</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
+        <div class="labels"><span class="label hw">help wanted</span><span class="label tag">dx</span></div>
+        <h4><span lang="fr">Un mode démo sans Supabase</span><span lang="en">A demo mode without Supabase</span></h4>
+        <p lang="fr">Des meubles fictifs en mémoire pour essayer la boutique et l'espace vendeur en dix secondes, sans créer de compte.</p>
+        <p lang="en">Fake items in memory to try the shop and the seller space in ten seconds, without creating an account.</p>
+        <div class="issue-code"><code>configured</code><code>sb</code></div>
+      </a>
+    </div>
+
+    <div class="contrib-bottom">
+      <div class="contrib-box">
+        <h4><span lang="fr">Lancer le projet en local</span><span lang="en">Run it locally</span></h4>
+        <p lang="fr">Pas de npm, pas de build&nbsp;: tu modifies <code>index.html</code>, tu recharges la page. Il te faut juste un projet Supabase gratuit (ou le mode démo, si tu t'y attaques&nbsp;!).</p>
+        <p lang="en">No npm, no build: edit <code>index.html</code>, reload the page. You just need a free Supabase project (or the demo mode, if you take it on!).</p>
+        <div class="codebox">
+          <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>terminal<button type="button" class="copy grow" data-copy>Copy</button></div>
+<pre class="language-bash"><code class="language-bash">git clone https://github.com/Tom7053/meubles.git
+cd meubles
+python3 -m http.server 8000
+# boutique        → http://localhost:8000
+# espace vendeur  → http://localhost:8000/#vendeur</code></pre>
+        </div>
+      </div>
+      <div class="contrib-box">
+        <h4><span lang="fr">Pas envie de coder&nbsp;?</span><span lang="en">Not into code?</span></h4>
+        <p lang="fr">Il y a plein d'autres façons d'aider.</p>
+        <p lang="en">There are plenty of other ways to help.</p>
+        <ul class="ways">
+          <li><a href="https://github.com/Tom7053/meubles">
+            <span class="wi"><svg aria-hidden="true"><use href="#i-star"/></svg></span>
+            <span><b><span lang="fr">Mets une étoile</span><span lang="en">Star the repo</span></b><small><span lang="fr">ça aide le projet à être trouvé</span><span lang="en">it helps others find it</span></small></span>
+          </a></li>
+          <li><a href="#top" data-share>
+            <span class="wi"><svg aria-hidden="true"><use href="#i-share"/></svg></span>
+            <span><b><span lang="fr">Partage-le dans ton groupe d'expats</span><span lang="en">Share it in your expat group</span></b><small><span lang="fr">quelqu'un y déménage sûrement bientôt</span><span lang="en">someone there is surely moving soon</span></small></span>
+          </a></li>
+          <li><a href="https://github.com/Tom7053/meubles/issues/new">
+            <span class="wi"><svg aria-hidden="true"><use href="#i-chat"/></svg></span>
+            <span><b><span lang="fr">Raconte ta vente</span><span lang="en">Tell us about your sale</span></b><small><span lang="fr">ville, nombre de meubles, ce qui a manqué</span><span lang="en">city, number of items, what was missing</span></small></span>
+          </a></li>
+          <li><a href="https://github.com/Tom7053/meubles/issues/new">
+            <span class="wi"><svg aria-hidden="true"><use href="#i-bug"/></svg></span>
+            <span><b><span lang="fr">Signale un bug ou une idée</span><span lang="en">Report a bug or an idea</span></b><small><span lang="fr">une issue suffit, même courte</span><span lang="en">one issue is enough, even a short one</span></small></span>
+          </a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================ FIN ================================= -->
+<section class="cta-final">
+  <div class="wrap">
+    <h2><span lang="fr">Tu pars bientôt&nbsp;? Ton appart se vide plus vite que tu ne le crois.</span><span lang="en">Leaving soon? Your flat will empty faster than you think.</span></h2>
+    <p class="lede" lang="fr">Un lien, une affiche, des rendez-vous. Le reste, c'est du temps gagné pour dire au revoir.</p>
+    <p class="lede" lang="en">One link, one poster, self-booking viewings. The rest is time saved for saying goodbye.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="https://github.com/Tom7053/meubles/fork">
+        <svg aria-hidden="true"><use href="#i-github"/></svg>
+        <span lang="fr">Forker møbel</span><span lang="en">Fork møbel</span>
+      </a>
+      <a class="btn btn-ghost" href="#contribuer"><span lang="fr">Contribuer</span><span lang="en">Contribute</span></a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span lang="fr"><b>møbel</b> · «&nbsp;meuble&nbsp;» en danois. Né à Odense, pour toutes celles et ceux qui partent.</span>
+    <span lang="en"><b>møbel</b> · Danish for "furniture". Born in Odense, for everyone who's moving on.</span>
+    <nav aria-label="Liens">
+      <a href="https://github.com/Tom7053/meubles">GitHub</a>
+      <a href="https://github.com/Tom7053/meubles#readme">README</a>
+      <a href="https://github.com/Tom7053/meubles/issues">Issues</a>
+      <a href="../" data-shop-link><span lang="fr">Boutique d'origine</span><span lang="en">Original shop</span></a>
+    </nav>
+  </div>
+</footer>
+
+<!-- Modèle d'affiche, cloné dans le hero et dans la démo. -->
+<template id="poster-tpl">
+  <article class="poster">
+    <div class="pst-top">
+      <p class="pst-eyebrow pst-edit" data-field="eyebrow">My internship ends on 20 November</p>
+      <h3 class="pst-title pst-edit" data-field="title">Everything must go</h3>
+      <p class="pst-lede pst-edit" data-field="lede">I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low.</p>
+      <ul class="pst-list">
+        <li><span class="pst-name">Oak desk — IKEA</span><span class="pst-dots"></span><span class="pst-price">450 kr</span></li>
+        <li><span class="pst-name">Grey fabric sofa</span><span class="pst-dots"></span><span class="pst-price">600 kr</span></li>
+        <li><span class="pst-name">TV with remote</span><span class="pst-dots"></span><span class="pst-price">350 kr</span></li>
+        <li><span class="pst-name">Mattress <span class="pst-qty">×2</span></span><span class="pst-dots"></span><span class="pst-price">350 kr <span class="pst-each">each</span></span></li>
+        <li><span class="pst-name">Bed base <span class="pst-qty">×2</span></span><span class="pst-dots"></span><span class="pst-price">300 kr <span class="pst-each">each</span></span></li>
+        <li><span class="pst-name">Microwave oven</span><span class="pst-dots"></span><span class="pst-price">150 kr</span></li>
+      </ul>
+      <p class="pst-more">+ Small table, shelving unit, clothes rack, curtains, lamp…</p>
+    </div>
+    <div class="pst-band">
+      <div class="pst-qr"><img alt="QR code" data-qr></div>
+      <div>
+        <p class="pst-cta">Scan to see the full list and book a viewing</p>
+        <p class="pst-info">Pickup in Odense C</p>
+        <p class="pst-info">I will message you to confirm the time</p>
+        <p class="pst-pay"><span>Revolut</span><span>Cash</span></p>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" data-manual></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-jsx.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+
+<script>
+/* ------------------------------ langue ------------------------------ */
+const TITLES = {
+  fr: 'møbel · Tout doit partir',
+  en: 'møbel · Everything must go',
+};
+const DESCRIPTIONS = {
+  fr: "møbel, la boutique open source pour vider son logement quand on vit à l'étranger : un lien à partager, une affiche avec QR code, des rendez-vous qui se réservent tout seuls. Gratuit, un seul fichier HTML.",
+  en: 'møbel, the open-source shop for clearing out your home when you live abroad: one link to share, a QR-code poster, viewings that book themselves. Free, one HTML file.',
+};
+let lang = document.documentElement.getAttribute('data-lang') || 'fr';
+
+function setLang(next) {
+  lang = next;
+  document.documentElement.setAttribute('data-lang', next);
+  document.documentElement.setAttribute('lang', next);
+  document.title = TITLES[next];
+  document.querySelector('meta[name="description"]').setAttribute('content', DESCRIPTIONS[next]);
+  document.querySelectorAll('[data-set-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.setLang === next)));
+  try { localStorage.setItem('mobel-lang', next); } catch { /* navigation privée */ }
+  renderGenerator();
+}
+document.querySelectorAll('[data-set-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.setLang)));
+
+/* --------------------------- affiche + QR --------------------------- */
+// Le QR code mène à la boutique, à la racine du site (« ../ » depuis about/) :
+// sur un fork, il suit tout seul la bonne adresse.
+const SHOP_URL = /^https?:$/.test(location.protocol)
+  ? new URL('../', location.href).href
+  : 'https://tom7053.github.io/meubles/';
+
+let qrSrc = null;
+try {
+  const box = document.createElement('div');
+  new QRCode(box, {
+    text: SHOP_URL, width: 512, height: 512,
+    colorDark: '#16307a', colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+  const canvas = box.querySelector('canvas');
+  qrSrc = canvas ? canvas.toDataURL('image/png') : null;
+} catch { /* qrcode.js absent : l'affiche reste sans QR */ }
+
+const tpl = document.getElementById('poster-tpl');
+document.querySelectorAll('[data-poster]').forEach((slot) => {
+  slot.appendChild(tpl.content.cloneNode(true));
+  const img = slot.querySelector('[data-qr]');
+  if (qrSrc) img.src = qrSrc; else img.remove();
+});
+
+// Dans la démo, les textes se modifient au clic, et les deux affiches
+// A5 restent identiques comme dans l'app.
+const sheet = document.getElementById('poster-sheet');
+sheet.querySelectorAll('.pst-edit').forEach((el) => {
+  el.contentEditable = 'true';
+  el.spellcheck = false;
+  el.addEventListener('input', () => {
+    sheet.querySelectorAll(`[data-field="${el.dataset.field}"]`).forEach((twin) => {
+      if (twin !== el) twin.textContent = el.textContent;
+    });
+  });
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+});
+// Le second exemplaire n'est qu'un reflet : on n'y tape pas.
+sheet.querySelectorAll('[data-poster="b"] .pst-edit').forEach((el) => {
+  el.contentEditable = 'false';
+  el.tabIndex = -1;
+});
+
+document.querySelectorAll('[data-format]').forEach((b) => b.addEventListener('click', () => {
+  const two = b.dataset.format === 'two';
+  sheet.classList.toggle('is-two', two);
+  document.querySelectorAll('[data-format]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+}));
+
+/* -------------------------- partage & liens ------------------------- */
+document.querySelectorAll('[data-shop-link]').forEach((a) => { a.href = SHOP_URL; });
+
+document.querySelectorAll('[data-share]').forEach((a) => a.addEventListener('click', async (e) => {
+  const url = location.href.split('#')[0];
+  if (navigator.share) {
+    e.preventDefault();
+    try { await navigator.share({ title: TITLES[lang], url }); } catch { /* annulé */ }
+  } else if (navigator.clipboard) {
+    e.preventDefault();
+    try {
+      await navigator.clipboard.writeText(url);
+      const small = a.querySelector('small');
+      const before = small.innerHTML;
+      small.textContent = lang === 'fr' ? 'Lien copié !' : 'Link copied!';
+      setTimeout(() => { small.innerHTML = before; }, 1800);
+    } catch { /* presse-papiers refusé */ }
+  }
+}));
+
+/* ----------------------------- code ------------------------------ */
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+function selectTab(tab, focus) {
+  tabs.forEach((t) => {
+    const on = t === tab;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+    document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+  });
+  if (focus) tab.focus();
+}
+tabs.forEach((t, i) => {
+  t.addEventListener('click', () => selectTab(t));
+  t.addEventListener('keydown', (e) => {
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    selectTab(tabs[(i + step + tabs.length) % tabs.length], true);
+  });
+});
+
+// Un bouton « Copy » sur chaque bloc de code qui n'en a pas.
+document.querySelectorAll('.codebox').forEach((box) => {
+  let btn = box.querySelector('[data-copy]');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy';
+    btn.textContent = 'Copy';
+    box.querySelector('.codebar').appendChild(btn);
+  }
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(box.querySelector('pre').innerText);
+      btn.textContent = lang === 'fr' ? 'Copié' : 'Copied';
+    } catch {
+      btn.textContent = lang === 'fr' ? 'Échec' : 'Failed';
+    }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  });
+});
+
+if (window.Prism) Prism.highlightAll();
+
+/* ---------------- générateur de description (démo) ---------------- */
+// Version allégée des listes de l'app : mêmes phrases, moins de types.
+// pick(), suggestTitle() et describeItem() sont recopiés d'index.html.
+const CONDITIONS = [
+  { en: 'New', fr: 'Neuf', sentences: ['Brand new, never used.', 'Never used, still exactly as it came from the shop.'] },
+  { en: 'Like new', fr: 'Comme neuf', sentences: ['Barely used, it looks like new.', 'Hardly used and still looks as good as new.'] },
+  { en: 'Very good', fr: 'Très bon état', sentences: ['In very good condition.', 'Well looked after and in very good condition.'] },
+  { en: 'Good', fr: 'Bon état', sentences: ['In good condition, with light signs of use.', 'Good condition, just a few light marks from normal use.'] },
+  { en: 'Fair', fr: 'État correct, traces d’usure', sentences: ['In fair condition, with visible signs of wear.', 'It shows some wear, and the price reflects that.'] },
+];
+const KINDS = [
+  { fr: 'Bureau', en: 'desk', uses: ['Ideal for working or studying from home.', 'Turns any corner into a home office.'] },
+  { fr: 'Table', en: 'table', uses: ['Good for everyday meals or dinner with friends.', 'Works for meals, homework or board game nights.'] },
+  { fr: 'Table basse', en: 'coffee table', uses: ['Just right in front of a sofa.', 'Handy for coffee, books and the remote.'] },
+  { fr: 'Chaise', en: 'chair', uses: ['Works at a dining table or at a desk.', 'A simple, practical chair for every day.'] },
+  { fr: 'Chaise de bureau', en: 'office chair', uses: ['Made for long hours at the desk.', 'A good companion for long study sessions.'] },
+  { fr: 'Fauteuil', en: 'armchair', uses: ['Perfect for a reading corner.', 'A cosy seat for reading or watching TV.'] },
+  { fr: 'Canapé', en: 'sofa', uses: ['Great for movie nights and having friends over.', 'The heart of a cosy living room.'] },
+  { fr: 'Lit', en: 'bed', long: true, uses: ['Good for a bedroom or a guest room.', 'Ready for a good night’s sleep in your new place.'] },
+  { fr: 'Matelas', en: 'mattress', long: true, uses: ['Saves you buying a new one for your new place.', 'A good night’s sleep without paying shop prices.'] },
+  { fr: 'Armoire', en: 'wardrobe', uses: ['Plenty of room for your clothes.', 'Keeps your clothes tidy and out of sight.'] },
+  { fr: 'Commode', en: 'chest of drawers', uses: ['Keeps clothes and bits and pieces tidy.', 'Great storage for a bedroom or a hallway.'] },
+  { fr: 'Étagère', en: 'shelf', uses: ['Handy for books, plants or storage boxes.', 'Easy extra storage for any room.'] },
+  { fr: 'Télé', en: 'TV', uses: ['Ready for films, series and games.', 'Perfect for movie nights.'] },
+  { fr: 'Lampe', en: 'lamp', uses: ['Adds a cosy light to any room.', 'Nice soft light for the evenings.'] },
+];
+const MATERIALS = [
+  { fr: 'Bois', en: 'wood', adj: 'wooden' },
+  { fr: 'Bois massif', en: 'solid wood' },
+  { fr: 'Chêne', en: 'oak' },
+  { fr: 'Pin', en: 'pine' },
+  { fr: 'Bouleau', en: 'birch' },
+  { fr: 'Métal', en: 'metal' },
+  { fr: 'Verre', en: 'glass' },
+  { fr: 'Tissu', en: 'fabric' },
+  { fr: 'Velours', en: 'velvet' },
+  { fr: 'Cuir', en: 'leather' },
+  { fr: 'Rotin', en: 'rattan' },
+];
+const COLOURS = [
+  { fr: 'Blanc', en: 'white' }, { fr: 'Noir', en: 'black' }, { fr: 'Gris', en: 'grey' },
+  { fr: 'Beige', en: 'beige' }, { fr: 'Marron', en: 'brown' }, { fr: 'Bleu', en: 'blue' },
+  { fr: 'Vert', en: 'green' },
+];
+const FEATURES = [
+  { fr: 'Beaucoup de rangement', en: 'has plenty of storage' },
+  { fr: 'Tiroirs', en: 'has drawers' },
+  { fr: 'Facile à démonter', en: 'is easy to take apart' },
+  { fr: 'Réglable en hauteur', en: 'is height-adjustable' },
+  { fr: 'Très confortable', en: 'is very comfortable' },
+  { fr: 'Marche parfaitement', en: 'works perfectly' },
+  { fr: 'Extensible', en: 'extends for extra guests', for: ['table'] },
+  { fr: 'Convertible en lit', en: 'turns into a bed', for: ['sofa'] },
+  { fr: 'Avec le matelas', en: 'comes with the mattress', for: ['bed'] },
+  { fr: 'Avec les coussins', en: 'comes with its cushions', for: ['sofa', 'armchair', 'chair'] },
+  { fr: 'Avec la télécommande', en: 'comes with the remote', for: ['TV'] },
+  { fr: 'Ampoule fournie', en: 'comes with a bulb', for: ['lamp'] },
+];
+const FLAWS = [
+  { fr: 'Petites rayures', en: 'a few small scratches' },
+  { fr: 'Petite tache', en: 'a small stain' },
+  { fr: 'Petit choc', en: 'a small dent' },
+  { fr: 'Un peu bancal', en: 'a slight wobble' },
+];
+const HOME = [
+  { fr: 'Non-fumeur', en: 'smoke-free' },
+  { fr: 'Sans animaux', en: 'pet-free' },
+];
+const PICKUP = [
+  { fr: 'Rentre dans une voiture', label: 'Fits in a car', en: 'It fits in a normal car.' },
+  { fr: 'Déjà démonté', label: 'Already taken apart', en: 'It is already taken apart, so it is easy to transport.' },
+  { fr: 'Prévoir une camionnette', label: 'Needs a van', en: 'You will need a van or a big car to take it home.' },
+  { fr: 'Je peux aider à porter', label: 'I can help carry', en: 'I can help you carry it to your car.' },
+];
+
+function priceValue(raw) {
+  if (!raw) return 0;
+  const cleaned = String(raw)
+    .replace(/[^\d.,]/g, '')
+    .replace(/[.,](?=\d{3}(\D|$))/g, '')
+    .replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isFinite(n) ? n : 0;
+}
+const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
+const newVersion = () => Math.floor(Math.random() * 100000);
+
+function pick(options, version, slot) {
+  let h = Math.imul(version | 0, 0x9e3779b1);
+  for (let i = 0; i < slot.length; i++) h = Math.imul(h ^ slot.charCodeAt(i), 0x01000193);
+  h ^= h >>> 15;
+  return options[(h >>> 0) % options.length];
+}
+
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const article = (word) => (/^[aeiou]/i.test(word) ? 'an' : 'a');
+const joinAnd = (list) =>
+  list.length < 2 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+const fitsKind = (option, kind) => !option.for || option.for.includes(kind);
+
+function suggestTitle(d) {
+  const kind = KINDS.find((k) => k.en === d.kind);
+  if (!kind) return '';
+  const material = MATERIALS.find((m) => m.en === d.material);
+  return cap([d.brand.trim(), material && (material.adj || material.en), kind.en].filter(Boolean).join(' '));
+}
+
+function describeItem(item, d) {
+  const kind = KINDS.find((k) => k.en === d.kind);
+  const material = MATERIALS.find((m) => m.en === d.material);
+  const brand = d.brand.trim();
+  const from = brand ? ` from ${brand}` : '';
+  const say = (options, slot) => pick(options, d.version, slot);
+  const picked = (list) => list.filter((o) => d.tags.includes(o.en) && fitsKind(o, d.kind)).map((o) => o.en);
+  const sentences = [];
+
+  const look = [d.colour, material && material.en].filter(Boolean).join(' ');
+  if (kind && (look || brand)) {
+    const thing = [d.colour, material && (material.adj || material.en), kind.en].filter(Boolean).join(' ');
+    const openers = [`${cap(thing)}${from}.`, `${cap(article(thing))} ${thing}${from}.`];
+    if (brand) openers.push(`${brand} ${thing}.`);
+    if (look) openers.push(`${cap(kind.en)} in ${look}${from}.`);
+    sentences.push(say(openers, 'open'));
+  }
+
+  if (kind) sentences.push(say(kind.uses, 'use'));
+
+  const long = kind && kind.long;
+  const sizes = [['wide', 'W', d.width], [long ? 'long' : 'deep', long ? 'L' : 'D', d.depth], ['high', 'H', d.height]]
+    .map(([word, letter, v]) => ({ word, letter, v: String(v || '').replace(/[^\d.,]/g, '') }))
+    .filter((s) => s.v);
+  if (sizes.length) {
+    const options = [`It measures ${joinAnd(sizes.map((s) => `${s.v} cm ${s.word}`))}.`];
+    if (sizes.length > 1) {
+      options.push(`Size: ${sizes.map((s) => s.v).join(' × ')} cm (${sizes.map((s) => s.letter).join(' × ')}).`);
+    }
+    sentences.push(say(options, 'size'));
+  }
+
+  const features = picked(FEATURES);
+  if (features.length) {
+    const list = joinAnd(features);
+    sentences.push(say([`It ${list}.`, `Good to know: it ${list}.`, `Bonus: it ${list}.`], 'features'));
+  }
+
+  const year = parseInt(d.year, 10);
+  const thisYear = new Date().getFullYear();
+  if (year >= 1950 && year <= thisYear) {
+    sentences.push(year === thisYear
+      ? say(['Bought this year.', 'I bought it earlier this year.'], 'year')
+      : say([`Bought in ${year}.`, `I bought it in ${year}.`], 'year'));
+  }
+  const paid = priceValue(d.paid);
+  const asking = priceValue(item.price);
+  if (paid > 0) {
+    const off = asking > 0 && asking < paid ? Math.round((1 - asking / paid) * 100) : 0;
+    sentences.push(off >= 10
+      ? say([`I paid ${fmtKr(paid)} for it new, so you save ${off}%.`,
+             `It cost ${fmtKr(paid)} new: you pay ${off}% less.`], 'paid')
+      : say([`It cost ${fmtKr(paid)} new.`, `I paid ${fmtKr(paid)} for it new.`], 'paid'));
+  }
+
+  const condition = CONDITIONS.find((c) => c.en === item.condition);
+  if (condition) sentences.push(say(condition.sentences, 'condition'));
+
+  const flaws = picked(FLAWS);
+  if (flaws.length) {
+    const list = joinAnd(flaws);
+    sentences.push(say([`Please note: ${list}.`, `To be upfront, it has ${list}.`], 'flaws'));
+  }
+
+  const home = picked(HOME);
+  if (home.length) {
+    sentences.push(say([`From a ${home.join(', ')} home.`, `It comes from a ${joinAnd(home)} home.`], 'home'));
+  }
+
+  sentences.push(...picked(PICKUP));
+
+  return sentences.join(' ');
+}
+
+const gen = {
+  item: { price: '450', condition: 'Very good' },
+  d: {
+    kind: 'desk', material: 'oak', colour: 'white', brand: 'IKEA', year: '2023', paid: '1200',
+    width: '120', depth: '60', height: '75',
+    tags: ['has drawers', 'a few small scratches', 'smoke-free', 'It fits in a normal car.'],
+    version: newVersion(),
+  },
+};
+
+const genRoot = document.getElementById('generator');
+const SELECTS = {
+  kind: { list: KINDS, label: (o) => (lang === 'fr' ? o.fr : cap(o.en)), value: (o) => o.en, empty: false },
+  material: { list: MATERIALS, label: (o) => (lang === 'fr' ? o.fr : cap(o.en)), value: (o) => o.en, empty: true },
+  colour: { list: COLOURS, label: (o) => (lang === 'fr' ? o.fr : cap(o.en)), value: (o) => o.en, empty: true },
+  condition: { list: CONDITIONS, label: (o) => (lang === 'fr' ? o.fr : o.en), value: (o) => o.en, empty: true },
+};
+const fieldValue = (key) => (key === 'price' || key === 'condition' ? gen.item[key] : gen.d[key]);
+
+function renderGenerator() {
+  if (!genRoot) return;
+  Object.entries(SELECTS).forEach(([key, s]) => {
+    const select = genRoot.querySelector(`select[data-key="${key}"]`);
+    const current = fieldValue(key);
+    select.innerHTML = '';
+    if (s.empty) select.add(new Option('—', ''));
+    s.list.forEach((o) => select.add(new Option(s.label(o), s.value(o))));
+    select.value = current;
+  });
+  genRoot.querySelectorAll('input[data-key]').forEach((input) => {
+    if (document.activeElement !== input) input.value = fieldValue(input.dataset.key);
+  });
+
+  const groups = {
+    features: FEATURES.filter((o) => fitsKind(o, gen.d.kind)).map((o) => ({ value: o.en, text: lang === 'fr' ? o.fr : o.en })),
+    flaws: FLAWS.map((o) => ({ value: o.en, text: lang === 'fr' ? o.fr : o.en })),
+    other: [
+      ...HOME.map((o) => ({ value: o.en, text: lang === 'fr' ? o.fr : cap(o.en) })),
+      ...PICKUP.map((o) => ({ value: o.en, text: lang === 'fr' ? o.fr : o.label })),
+    ],
+  };
+  Object.entries(groups).forEach(([name, chips]) => {
+    const box = genRoot.querySelector(`[data-chips="${name}"]`);
+    box.innerHTML = '';
+    chips.forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = c.text;
+      b.setAttribute('aria-pressed', String(gen.d.tags.includes(c.value)));
+      b.addEventListener('click', () => {
+        const on = gen.d.tags.includes(c.value);
+        gen.d.tags = on ? gen.d.tags.filter((t) => t !== c.value) : [...gen.d.tags, c.value];
+        b.setAttribute('aria-pressed', String(!on));
+        renderOutput();
+      });
+      box.appendChild(b);
+    });
+  });
+  renderOutput();
+}
+
+function renderOutput(flash) {
+  const text = describeItem(gen.item, gen.d);
+  const out = document.getElementById('g-out-text');
+  out.textContent = text || (lang === 'fr' ? 'Choisis quelques options…' : 'Pick a few options…');
+  document.getElementById('g-out-title').textContent = suggestTitle(gen.d);
+  const p = priceValue(gen.item.price);
+  document.getElementById('g-out-price').textContent = p > 0 ? fmtKr(p) : 'Free';
+  document.getElementById('g-out-ver').textContent = `version #${gen.d.version}`;
+  if (flash) { out.classList.remove('flash'); void out.offsetWidth; out.classList.add('flash'); }
+}
+
+if (genRoot) {
+  genRoot.addEventListener('input', (e) => {
+    const key = e.target.dataset && e.target.dataset.key;
+    if (!key) return;
+    if (key === 'price' || key === 'condition') gen.item[key] = e.target.value;
+    else gen.d[key] = e.target.value;
+    // Les atouts dépendent du type de meuble.
+    if (key === 'kind') renderGenerator(); else renderOutput();
+  });
+  document.getElementById('g-rephrase').addEventListener('click', () => {
+    gen.d.version = newVersion();
+    renderOutput(true);
+  });
+}
+
+setLang(lang);
+</script>
+</body>
+</html>
