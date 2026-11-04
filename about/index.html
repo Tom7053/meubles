@@ -981,7 +981,7 @@
           <div class="toast">
             <span class="toast-icon"><svg><use href="#i-bell"/></svg></span>
             <div>
-              <small><span lang="fr">Espace vendeur</span><span lang="en">Seller space (French for now)</span></small>
+              <small><span lang="fr">Espace vendeur</span><span lang="en">Seller space</span></small>
               Nouveau rendez-vous — Anna, jeudi 12 novembre à 17:00
             </div>
           </div>
@@ -1125,7 +1125,7 @@
 
     <div class="code-tabs">
       <div class="tablist" role="tablist" aria-label="Extraits de code">
-        <button class="tab" role="tab" id="t-config" aria-controls="p-config" aria-selected="true"><b><span lang="fr">Les 2 lignes à remplir</span><span lang="en">The 2 lines to fill in</span></b><small>index.html</small></button>
+        <button class="tab" role="tab" id="t-config" aria-controls="p-config" aria-selected="true"><b><span lang="fr">Les 2 lignes à remplir</span><span lang="en">The 2 lines to fill in</span></b><small>config.js</small></button>
         <button class="tab" role="tab" id="t-pick" aria-controls="p-pick" aria-selected="false" tabindex="-1"><b><span lang="fr">Descriptions sans IA</span><span lang="en">Descriptions, no AI</span></b><small>pick() · describeItem()</small></button>
         <button class="tab" role="tab" id="t-qr" aria-controls="p-qr" aria-selected="false" tabindex="-1"><b><span lang="fr">Le QR code de l'affiche</span><span lang="en">The poster's QR code</span></b><small>useQrCode()</small></button>
         <button class="tab" role="tab" id="t-stats" aria-controls="p-stats" aria-selected="false" tabindex="-1"><b><span lang="fr">Compter les scans</span><span lang="en">Counting scans</span></b><small>startStats()</small></button>
@@ -1138,13 +1138,11 @@
           <p class="panel-text" lang="fr">Toute la configuration. La clé <code>anon</code> est publique par conception&nbsp;: ce sont les règles RLS de la base qui protègent les prénoms et les numéros des acheteurs. La clé <code>service_role</code>, elle, ne va jamais ici.</p>
           <p class="panel-text" lang="en">The entire configuration. The <code>anon</code> key is public by design: the database's RLS rules are what protect buyers' names and numbers. The <code>service_role</code> key never goes here.</p>
           <div class="codebox">
-            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<a href="https://github.com/Tom7053/meubles/blob/main/index.html"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
-<pre class="language-html"><code class="language-html">&lt;script&gt;
-  window.CONFIG = {
-    SUPABASE_URL: 'https://TON-PROJET.supabase.co',
-    SUPABASE_ANON_KEY: 'COLLE-ICI-TA-CLE-ANON'
-  };
-&lt;/script&gt;</code></pre>
+            <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>config.js<a href="https://github.com/Tom7053/meubles/blob/main/config.js"><span lang="fr">Voir sur GitHub ↗</span><span lang="en">View on GitHub ↗</span></a></div>
+<pre class="language-javascript"><code class="language-javascript">window.CONFIG = {
+  SUPABASE_URL: 'https://YOUR-PROJECT.supabase.co',
+  SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
+};</code></pre>
           </div>
         </div>
 
@@ -1168,9 +1166,9 @@ const asking = priceValue(item.price);
 if (paid &gt; 0) {
   const off = asking &gt; 0 &amp;&amp; asking &lt; paid ? Math.round((1 - asking / paid) * 100) : 0;
   sentences.push(off &gt;= 10
-    ? say([`I paid ${fmtKr(paid)} for it new, so you save ${off}%.`,
-           `It cost ${fmtKr(paid)} new: you pay ${off}% less.`], 'paid')
-    : say([`It cost ${fmtKr(paid)} new.`, `I paid ${fmtKr(paid)} for it new.`], 'paid'));
+    ? say([`I paid ${formatMoney(paid)} for it new, so you save ${off}%.`,
+           `It cost ${formatMoney(paid)} new: you pay ${off}% less.`], 'paid')
+    : say([`It cost ${formatMoney(paid)} new.`, `I paid ${formatMoney(paid)} for it new.`], 'paid'));
 }</code></pre>
           </div>
         </div>
@@ -1269,32 +1267,32 @@ jobs:
     <div class="section-head">
       <p class="eyebrow"><span lang="fr">Installer</span><span lang="en">Set up</span></p>
       <h2><span lang="fr">Ta boutique en 15 minutes.</span><span lang="en">Your shop in 15 minutes.</span></h2>
-      <p class="lede" lang="fr">Aucune ligne de commande. Un compte GitHub, un compte Supabase, et c'est parti. Le <a href="https://github.com/Tom7053/meubles#readme">README</a> détaille chaque écran.</p>
-      <p class="lede" lang="en">No command line. A GitHub account, a Supabase account, and you're off. The <a href="https://github.com/Tom7053/meubles#readme">README</a> walks through every screen (in French).</p>
+      <p class="lede" lang="fr">Aucune ligne de commande. Un compte GitHub, un compte Supabase, et c'est parti. Le <a href="https://github.com/Tom7053/meubles#readme">README</a> (en anglais) détaille chaque écran.</p>
+      <p class="lede" lang="en">No command line. A GitHub account, a Supabase account, and you're off. The <a href="https://github.com/Tom7053/meubles#readme">README</a> walks through every screen.</p>
     </div>
 
     <ol class="steps">
       <li class="step">
         <h4><span lang="fr">Copie le dépôt</span><span lang="en">Copy the repository</span></h4>
-        <p lang="fr"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> le projet sur ton compte GitHub. Tout le site est dans <code>index.html</code>.</p>
-        <p lang="en"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> the project to your GitHub account. The whole site is in <code>index.html</code>.</p>
+        <p lang="fr"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> le projet sur ton compte GitHub. Tu ne toucheras qu'à un fichier, <code>config.js</code>.</p>
+        <p lang="en"><a href="https://github.com/Tom7053/meubles/fork">Fork</a> the project to your GitHub account. You will only touch one file, <code>config.js</code>.</p>
       </li>
       <li class="step">
         <h4><span lang="fr">Crée la base Supabase</span><span lang="en">Create the Supabase database</span></h4>
-        <p lang="fr">Nouveau projet sur <a href="https://supabase.com">supabase.com</a> (région Europe), puis <b>SQL Editor</b>&nbsp;: colle <code>schema.sql</code> et clique sur <b>Run</b>.</p>
-        <p lang="en">New project on <a href="https://supabase.com">supabase.com</a> (an EU region), then <b>SQL Editor</b>: paste <code>schema.sql</code> and hit <b>Run</b>.</p>
+        <p lang="fr">Nouveau projet sur <a href="https://supabase.com">supabase.com</a> (la région la plus proche de tes acheteurs), puis <b>SQL Editor</b>&nbsp;: colle <code>install.sql</code> et clique sur <b>Run</b>.</p>
+        <p lang="en">New project on <a href="https://supabase.com">supabase.com</a> (the region closest to your buyers), then <b>SQL Editor</b>: paste <code>install.sql</code> and hit <b>Run</b>.</p>
       </li>
       <li class="step">
         <h4><span lang="fr">Crée ton compte vendeur</span><span lang="en">Create your seller account</span></h4>
-        <p lang="fr"><b>Authentication → Users → Add user</b>, coche <i>Auto Confirm</i>. Puis désactive les inscriptions&nbsp;: personne d'autre ne pourra créer de compte.</p>
-        <p lang="en"><b>Authentication → Users → Add user</b>, tick <i>Auto Confirm</i>. Then turn off sign-ups: nobody else can create an account.</p>
+        <p lang="fr"><b>Authentication → Users → Add user</b>, coche <i>Auto Confirm</i>. Le premier compte créé est le vendeur. Puis désactive les inscriptions.</p>
+        <p lang="en"><b>Authentication → Users → Add user</b>, tick <i>Auto Confirm</i>. The first account created is the seller. Then turn off sign-ups.</p>
       </li>
       <li class="step">
         <h4><span lang="fr">Branche le site</span><span lang="en">Connect the site</span></h4>
-        <p lang="fr">Dans <b>Project Settings → Data API</b>, copie l'URL et la clé anon dans <code>index.html</code>.</p>
-        <p lang="en">From <b>Project Settings → Data API</b>, copy the URL and anon key into <code>index.html</code>.</p>
+        <p lang="fr">Dans <b>Project Settings → Data API</b>, copie l'URL et la clé anon dans <code>config.js</code>.</p>
+        <p lang="en">From <b>Project Settings → Data API</b>, copy the URL and anon key into <code>config.js</code>.</p>
         <div class="codebox">
-          <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>index.html<button type="button" class="copy grow" data-copy>Copy</button></div>
+          <div class="codebar"><span class="dots"><i></i><i></i><i></i></span>config.js<button type="button" class="copy grow" data-copy>Copy</button></div>
 <pre class="language-javascript"><code class="language-javascript">SUPABASE_URL: 'https://abcdefgh.supabase.co',
 SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
         </div>
@@ -1305,13 +1303,13 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
         <p lang="en"><b>Settings → Pages</b>, branch <code>main</code>, folder <code>/ (root)</code>. A minute later your shop is live. Paste that address into Supabase too (<b>URL Configuration → Site URL</b>).</p>
         <div class="codebox">
           <div class="codebar"><span class="dots"><i></i><i></i><i></i></span><span lang="fr">ton adresse</span><span lang="en">your address</span><button type="button" class="copy grow" data-copy>Copy</button></div>
-<pre class="plain"><code>https://TON-PSEUDO.github.io/meubles/</code></pre>
+<pre class="plain"><code>https://&lt;you&gt;.github.io/&lt;repository&gt;/</code></pre>
         </div>
       </li>
       <li class="step">
         <h4><span lang="fr">Ajoute tes meubles, imprime, partage</span><span lang="en">Add items, print, share</span></h4>
-        <p lang="fr">Ouvre <code>…/meubles/#vendeur</code>, connecte-toi, ajoute tes meubles. Onglet <b>Affiche</b>&nbsp;: imprime. Puis poste le lien dans tes groupes.</p>
-        <p lang="en">Open <code>…/meubles/#vendeur</code>, sign in, add your items. <b>Affiche</b> (poster) tab: print. Then post the link in your groups.</p>
+        <p lang="fr">Ouvre <code>…/#admin</code> et connecte-toi&nbsp;: les <b>Premiers pas</b> demandent tes langues, ton pays et ta devise. Ajoute tes meubles, imprime l'<b>Affiche</b>, poste le lien dans tes groupes.</p>
+        <p lang="en">Open <code>…/#admin</code> and sign in: <b>First steps</b> asks your languages, country and currency. Add your items, print the <b>Poster</b>, post the link in your groups.</p>
       </li>
     </ol>
     <div class="note">
@@ -1330,24 +1328,38 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
         <p class="eyebrow"><span lang="fr">Contribuer</span><span lang="en">Contribute</span></p>
         <h2><span lang="fr">Écrit pour une vente. Prêt à voyager.</span><span lang="en">Built for one sale. Ready to travel.</span></h2>
       </div>
-      <p class="lede" lang="fr">Aujourd'hui, møbel parle couronnes danoises, son espace vendeur parle français et sa date de fin est écrite en dur. Parfait pour Odense, moins pour Lisbonne, Montréal ou Berlin. Chaque idée ci-dessous rend l'outil utile à la prochaine personne qui déménage.</p>
-      <p class="lede" lang="en">Today, møbel speaks Danish kroner, its seller space speaks French and its end date is hard-coded. Perfect for Odense, less so for Lisbon, Montreal or Berlin. Each idea below makes the tool useful for the next person moving out.</p>
+      <p class="lede" lang="fr">Né pour une vente à Odense, møbel parle maintenant anglais et français, dans n'importe quelle devise, avec les moyens de paiement de chaque pays. Prochaine étape&nbsp;: Lisbonne, Montréal, Berlin. Chaque idée ci-dessous rend l'outil utile à la prochaine personne qui déménage.</p>
+      <p class="lede" lang="en">Born for one sale in Odense, møbel now speaks English and French, in any currency, with each country's ways to pay. Next stop: Lisbon, Montreal, Berlin. Each idea below makes the tool useful for the next person moving out.</p>
     </div>
 
     <div class="issues">
-      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
-        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">config</span></div>
-        <h4><span lang="fr">Devise et format des prix au choix</span><span lang="en">Configurable currency and price format</span></h4>
-        <p lang="fr">« kr » et le format danois sont écrits en dur. Les déplacer dans <code>CONFIG</code> ouvre la porte aux euros, francs suisses, zlotys…</p>
-        <p lang="en">"kr" and Danish number formatting are hard-coded. Moving them to <code>CONFIG</code> opens the door to euros, Swiss francs, złoty…</p>
-        <div class="issue-code"><code>fmtKr()</code><code>withKr()</code></div>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
+        <div class="labels"><span class="label hw">help wanted</span><span class="label tag">i18n</span></div>
+        <h4><span lang="fr">Une langue de plus</span><span lang="en">One more language</span></h4>
+        <p lang="fr">Les textes sont écrits en anglais et en français côte à côte. Les ranger dans <code>locales/*.json</code> ouvrirait møbel à l’allemand, au danois, à l’espagnol…</p>
+        <p lang="en">Texts are written in English and French side by side. Moving them to <code>locales/*.json</code> would open møbel to German, Danish, Spanish…</p>
+        <div class="issue-code"><code>t()</code><code>locales/</code></div>
       </a>
       <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
-        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">config</span></div>
-        <h4><span lang="fr">Date de fin et objectif dans la config</span><span lang="en">End date and goal in the config</span></h4>
-        <p lang="fr">La date limite des rendez-vous et l'objectif de vente sont des constantes. Les rendre réglables depuis l'onglet Planning, ce serait mieux.</p>
-        <p lang="en">The last booking day and the sales goal are constants. Making them editable from the Planning tab would be better.</p>
-        <div class="issue-code"><code>LAST_DAY</code><code>SALES_GOAL</code></div>
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">i18n</span></div>
+        <h4><span lang="fr">Semaine du dimanche, heures en 12 h</span><span lang="en">Sunday-first weeks, 12-hour clock</span></h4>
+        <p lang="fr">Le calendrier commence le lundi et affiche 14:00. Aux États-Unis, on attend dimanche et 2:00 PM.</p>
+        <p lang="en">The calendar starts on Monday and shows 14:00. In the US, people expect Sunday and 2:00 PM.</p>
+        <div class="issue-code"><code>monthDays()</code><code>WeekdayPicker</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
+        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">poster</span></div>
+        <h4><span lang="fr">L’affiche en format Letter</span><span lang="en">The poster on Letter paper</span></h4>
+        <p lang="fr">L’affiche est dessinée en A4. Un choix A4 / Letter dans l’onglet Affiche la ferait remplir la feuille partout.</p>
+        <p lang="en">The poster is drawn on A4. An A4 / Letter choice in the Poster tab would make it fill the sheet everywhere.</p>
+        <div class="issue-code"><code>A4_PX</code><code>@page</code></div>
+      </a>
+      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
+        <div class="labels"><span class="label hw">help wanted</span><span class="label tag">data</span></div>
+        <h4><span lang="fr">Des prix en nombres</span><span lang="en">Prices as numbers</span></h4>
+        <p lang="fr">Les prix sont du texte, lus par <code>priceValue</code> qui devine le séparateur des milliers. Une colonne numérique réglerait « 1.200 » contre « 1.20 ».</p>
+        <p lang="en">Prices are text, read by <code>priceValue</code>, which guesses the thousands separator. A numeric column would settle "1.200" versus "1.20".</p>
+        <div class="issue-code"><code>priceValue()</code><code>price_amount</code></div>
       </a>
       <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
         <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">sharing</span></div>
@@ -1355,20 +1367,6 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
         <p lang="fr">Posté dans un groupe, le lien de la boutique n'a pas d'image. Des balises Open Graph (et une image générée) le feraient sortir du lot.</p>
         <p lang="en">Posted in a group, the shop link shows no image. Open Graph tags (and a generated image) would make it stand out.</p>
         <div class="issue-code"><code>og:image</code><code>og:title</code></div>
-      </a>
-      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">
-        <div class="labels"><span class="label gfi">good first issue</span><span class="label tag">payments</span></div>
-        <h4><span lang="fr">Plus de moyens de paiement</span><span lang="en">More payment methods</span></h4>
-        <p lang="fr">Vipps, Swish, Wero, Lydia, Twint… Ajouter un moyen, c'est une ligne en JS et une ligne en SQL.</p>
-        <p lang="en">Vipps, Swish, Wero, Lydia, Twint… Adding one is a line of JS and a line of SQL.</p>
-        <div class="issue-code"><code>PAYMENT_METHODS</code><code>migration-paiement.sql</code></div>
-      </a>
-      <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
-        <div class="labels"><span class="label hw">help wanted</span><span class="label tag">i18n</span></div>
-        <h4><span lang="fr">Espace vendeur en anglais (et plus)</span><span lang="en">Seller space in English (and more)</span></h4>
-        <p lang="fr">L'espace vendeur et les commentaires du code sont en français. Une petite couche de traduction ouvrirait møbel à tout le monde.</p>
-        <p lang="en">The seller space and the code comments are in French. A small translation layer would open møbel to everyone.</p>
-        <div class="issue-code"><code>DAYS_FR</code><code>Admin</code></div>
       </a>
       <a class="issue" href="https://github.com/Tom7053/meubles/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22">
         <div class="labels"><span class="label hw">help wanted</span><span class="label tag">dx</span></div>
@@ -1389,8 +1387,8 @@ SUPABASE_ANON_KEY: 'eyJhbGciOi…'</code></pre>
 <pre class="language-bash"><code class="language-bash">git clone https://github.com/Tom7053/meubles.git
 cd meubles
 python3 -m http.server 8000
-# boutique        → http://localhost:8000
-# espace vendeur  → http://localhost:8000/#vendeur</code></pre>
+# shop          → http://localhost:8000
+# seller space  → http://localhost:8000/#admin</code></pre>
         </div>
       </div>
       <div class="contrib-box">

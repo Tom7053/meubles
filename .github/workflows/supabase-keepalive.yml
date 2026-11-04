@@ -1,13 +1,12 @@
 name: Supabase keep-alive
 
-# Supabase met en pause les projets gratuits restés une semaine sans
-# activité. Une petite lecture par jour suffit à le garder éveillé. Si le
-# projet est quand même en pause, ce workflow échoue et GitHub prévient
-# par e-mail.
+# Supabase pauses free projects after a week without activity. One small
+# read a day keeps it awake. If the project is paused anyway, this
+# workflow fails and GitHub tells you by e-mail.
 on:
   schedule:
-    - cron: '17 6 * * *'   # tous les jours vers 7 h 17 (heure du Danemark en hiver)
-  workflow_dispatch:       # bouton « Run workflow » pour tester à la main
+    - cron: '17 6 * * *'   # every day at 06:17 UTC
+  workflow_dispatch:       # "Run workflow" button, to test by hand
 
 jobs:
   ping:
@@ -16,20 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Lire une ligne de la table items
+      - name: Read one row of the items table
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # Sans secrets, on prend l'URL et la clé anon d'index.html : elles
-          # y sont déjà, publiques par conception.
+          # Without secrets, take the URL and anon key from config.js: they
+          # are already there, public by design.
           if [ -z "$SUPABASE_URL" ]; then
-            SUPABASE_URL=$(sed -n "s/.*SUPABASE_URL: *'\([^']*\)'.*/\1/p" index.html | head -n 1)
+            SUPABASE_URL=$(sed -n "s/.*SUPABASE_URL: *'\([^']*\)'.*/\1/p" config.js | head -n 1)
           fi
           if [ -z "$SUPABASE_ANON_KEY" ]; then
-            SUPABASE_ANON_KEY=$(sed -n "s/.*SUPABASE_ANON_KEY: *'\([^']*\)'.*/\1/p" index.html | head -n 1)
+            SUPABASE_ANON_KEY=$(sed -n "s/.*SUPABASE_ANON_KEY: *'\([^']*\)'.*/\1/p" config.js | head -n 1)
           fi
-          # Même tolérance que le site : URL copiée avec /rest/v1 ou un / au bout.
+          # config.js not filled in yet (a fresh fork): nothing to keep awake.
+          case "$SUPABASE_URL" in
+            ''|*YOUR-PROJECT*)
+              echo "config.js is not filled in yet: skipping."
+              exit 0 ;;
+          esac
+          # Same tolerance as the site: URL pasted with /rest/v1 or a trailing /.
           SUPABASE_URL=${SUPABASE_URL%/}
           SUPABASE_URL=${SUPABASE_URL%/rest/v1}
 
@@ -38,4 +43,4 @@ jobs:
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY"
           echo
-          echo "Supabase a répondu, le projet reste actif."
+          echo "Supabase answered: the project stays active."

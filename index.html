@@ -3,37 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Furniture for sale — Odense</title>
-<meta name="description" content="Furniture for sale before 20 November. Book a viewing.">
+<title>Furniture for sale</title>
+<meta name="description" content="Furniture for sale. Book a viewing in two taps.">
 <meta name="theme-color" content="#1e40af">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Exact versions: an update on the CDN side can never break the shop. -->
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.10/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
-<!-- =====================================================================
-     LES DEUX SEULES LIGNES A REMPLIR
-     Supabase > Project Settings > Data API
-     SUPABASE_URL = "Project URL", la racine et RIEN d'autre :
-       correct   https://abcdefgh.supabase.co
-       incorrect https://abcdefgh.supabase.co/rest/v1
-     Ces deux valeurs sont publiques par conception, elles peuvent rester
-     dans un depot public. Ce sont les regles RLS de schema.sql qui
-     protegent les donnees. Ne mets JAMAIS la cle service_role ici.
-     ===================================================================== -->
-<script>
-  window.CONFIG = {
-    SUPABASE_URL: 'https://dmjpjbgnghwzciwnciyb.supabase.co',
-    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtanBqYmduZ2h3emNpd25jaXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNjQwMjksImV4cCI6MjEwNDk0MDAyOX0.PHu6YcCQLJTx6T-c_wGdQmnzPb9YoFC80qiZ9bFjDgk'
-  };
-</script>
+<!-- Your Supabase project: the only file you fill in. See README.md. -->
+<script src="config.js"></script>
 
 <!-- Windows ne sait pas dessiner les drapeaux en emoji (il écrit « DK » à la
      place) : on lui prête alors ceux de Twemoji, utilisés seulement pour les
@@ -191,7 +178,7 @@ const { useState, useEffect, useLayoutEffect, useRef, useCallback, useContext, c
 /* ------------------------------ langues ----------------------------- */
 // La boutique et l'espace vendeur ont chacun leur langue, anglais ou
 // français, choisie dans l'onglet Réglages (colonnes shop_lang et
-// admin_lang de settings, migration-langue.sql). Chaque texte est écrit
+// admin_lang de settings, install.sql). Chaque texte est écrit
 // sur place dans les deux langues, l'anglais d'abord :
 //   t('Book a viewing', 'Réserver une visite')
 // Un composant parle la langue de son côté du site (LangContext) ;
@@ -214,19 +201,29 @@ const useShopLang = () => useContext(ShopLangContext);
 
 // La langue de l'espace vendeur est aussi gardée dans ce navigateur :
 // l'écran de connexion la connaît avant que les réglages arrivent, et le
-// choix marche même avant migration-langue.sql.
+// choix marche même avant install.sql.
 const ADMIN_LANG_KEY = 'meubles-langue-vendeur';
 
+// config.js missing, or still holding its placeholders: the page explains
+// what to fill in instead of failing.
+const CONFIG = window.CONFIG || {};
 const configured =
-  window.CONFIG.SUPABASE_URL.indexOf('TON-PROJET') === -1 &&
-  window.CONFIG.SUPABASE_ANON_KEY.indexOf('COLLE-ICI') === -1;
+  /^https?:\/\/\S+$/.test(String(CONFIG.SUPABASE_URL || '').trim()) &&
+  !/YOUR-PROJECT|TON-PROJET/.test(CONFIG.SUPABASE_URL) &&
+  String(CONFIG.SUPABASE_ANON_KEY || '').trim().length > 20 &&
+  !/YOUR-ANON-KEY|COLLE-ICI/.test(CONFIG.SUPABASE_ANON_KEY);
 
 // On accepte aussi l'URL copiée avec /rest/v1 au bout : la bibliothèque
 // ajoute les chemins toute seule et n'accepte que la racine du projet.
-const SUPABASE_URL = window.CONFIG.SUPABASE_URL
+const SUPABASE_URL = String(CONFIG.SUPABASE_URL || '')
   .trim()
   .replace(/\/(rest|auth|storage|realtime)\/v1\/?$/, '')
   .replace(/\/+$/, '');
+// The project's reference ('abcdefgh' in https://abcdefgh.supabase.co), for
+// links straight to its SQL Editor.
+const SUPABASE_REF = (SUPABASE_URL.match(/^https:\/\/([a-z0-9]+)\.supabase\.co$/) || [])[1] || '';
+// Version of install.sql this page expects (settings.schema_version).
+const SCHEMA_VERSION = 1;
 
 // Le lien « mot de passe oublié » reçu par e-mail revient sur cette page avec
 // #access_token=…&type=recovery (ou #error=… s'il a expiré). On le lit avant
@@ -240,37 +237,72 @@ const START_IN_ADMIN = FROM_RESET_LINK || RESET_LINK_FAILED || /^#(vendeur|admin
 const SITE_URL = window.location.origin + window.location.pathname;
 
 const sb = configured
-  ? window.supabase.createClient(SUPABASE_URL, window.CONFIG.SUPABASE_ANON_KEY.trim())
+  ? window.supabase.createClient(SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY.trim())
   : null;
 
-console.log('[meubles] fichier unique — Supabase :', SUPABASE_URL);
+console.log('[møbel] Supabase:', SUPABASE_URL || '(not configured)');
 
 const DAYS = {
   en: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
   fr: ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'],
 };
-// Les sites proposés en boutons sous « Liens vers les autres sites » d'une
-// annonce. Choisis dans l'onglet Réglages (colonne link_sites de settings,
-// migration-sites.sql) ; avant la migration, cette liste de départ.
-const LINK_PRESETS = ['Facebook Marketplace', 'DBA', 'Leboncoin', 'Vinted'];
+// The buttons offered under "Links to other sites" in a listing, chosen in
+// the Settings tab (settings.link_sites).
+const LINK_PRESETS = ['Facebook Marketplace'];
 const linkSites = (settings) => (Array.isArray(settings.link_sites) ? settings.link_sites : LINK_PRESETS);
 const FALLBACK_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
 
 const DEFAULT_SETTINGS = {
   id: 1,
-  address: 'Alfavej 510, 13',
-  payment: 'Revolut or cash',
+  address: '',
+  payment: '',
   weekdays: [true, true, true, true, true, true, false],
   slots: FALLBACK_SLOTS,
   blocked: [],
 };
 
-/* ---------------------------- objectif ----------------------------- */
-// Somme que la vente doit rapporter, en couronnes.
-const SALES_GOAL = 3000;
+/* ------------------------- shop-wide settings ----------------------- */
+// What plain helper functions need from the settings (currency, country,
+// last day, goal). App fills it from the settings on every render, before
+// anything is drawn, so every price and calendar follows the latest choice.
+const SHOP = { currency: 'EUR', country: '', lang: 'en', lastDay: '', goal: 0 };
 
-// Les prix sont saisis librement (« 450 kr », « 1.200 », « 1 200,50 »).
-// On en extrait un nombre pour pouvoir les additionner.
+// The shop header, typed in Settings, or neutral words in the shop language.
+// Also the defaults of the poster.
+const shopTitle = (settings, lang) => String(settings.shop_title || '').trim()
+  || (lang === 'fr' ? 'Meubles à vendre' : 'Furniture for sale');
+const shopIntro = (settings, lang) => String(settings.shop_intro || '').trim()
+  || (lang === 'fr' ? 'Vente de déménagement' : 'Moving sale');
+const shopText = (settings, lang) => String(settings.shop_text || '').trim()
+  || (lang === 'fr' ? 'Je déménage : tout doit partir, et les prix sont bas.'
+                    : 'I am moving out, so everything has to go and prices are low.');
+
+/* ------------------------------ countries ---------------------------- */
+// The currency of each country, to suggest one in "First steps" and in
+// Settings. Countries not listed here simply get no suggestion.
+const EURO_COUNTRIES = 'AD AT BE BG CY DE EE ES FI FR GR HR IE IT LT LU LV MC ME MT NL PT SI SK SM VA XK'.split(' ');
+const COUNTRY_CURRENCY = Object.fromEntries(
+  ('AE AED AL ALL AM AMD AR ARS AU AUD BA BAM BD BDT BF XOF BJ XOF BR BRL CA CAD CF XAF CG XAF CH CHF ' +
+   'CI XOF CL CLP CM XAF CN CNY CO COP CZ CZK DK DKK DZ DZD EG EGP FO DKK GA XAF GB GBP GE GEL GL DKK ' +
+   'GQ XAF HK HKD HU HUF ID IDR IL ILS IN INR IS ISK JP JPY KE KES KR KRW KW KWD KZ KZT LI CHF LK LKR ' +
+   'MA MAD MK MKD ML XOF MX MXN MY MYR NE XOF NG NGN NO NOK NZ NZD PE PEN PH PHP PK PKR PL PLN QA QAR ' +
+   'RO RON RS RSD SA SAR SE SEK SG SGD SN XOF TD XAF TG XOF TH THB TN TND TR TRY TW TWD UA UAH US USD ' +
+   'VN VND ZA ZAR').match(/\S+ \S+/g).map((pair) => pair.split(' ')),
+);
+const currencyOfCountry = (iso) => (EURO_COUNTRIES.includes(iso) ? 'EUR' : COUNTRY_CURRENCY[iso] || '');
+// Every currency offered in the pickers.
+const CURRENCIES = [...new Set(['EUR', ...Object.values(COUNTRY_CURRENCY)])];
+// The country of this browser ('fr-BE' → 'BE'), as a first guess.
+const browserCountry = () => {
+  try {
+    const region = new Intl.Locale(navigator.language).maximize().region;
+    return /^[A-Z]{2}$/.test(region || '') ? region : '';
+  } catch { return ''; }
+};
+
+/* ------------------------------- money ------------------------------ */
+// Prices are typed freely ('450', '1.200', '1 200,50', or older '450 kr').
+// This extracts a number, to add them up and format them.
 function priceValue(raw) {
   if (!raw) return 0;
   const cleaned = String(raw)
@@ -281,34 +313,65 @@ function priceValue(raw) {
   return isFinite(n) ? n : 0;
 }
 
-const fmtKr = (n) => `${Math.round(n).toLocaleString('da-DK')} kr`;
+// The locale that writes amounts the way people do where the shop is:
+// shop language + country. 'en-DK' gives "1.250 kr", 'fr-FR' "1 250 €",
+// 'en-US' "$1,250".
+const moneyLocale = () => {
+  const wanted = SHOP.country ? `${SHOP.lang}-${SHOP.country}` : SHOP.lang;
+  try { return Intl.NumberFormat.supportedLocalesOf([wanted])[0] || SHOP.lang; } catch { return SHOP.lang; }
+};
+const moneyFormat = (n, currency, locale) => new Intl.NumberFormat(locale || moneyLocale(), {
+  style: 'currency', currency: currency || SHOP.currency, currencyDisplay: 'narrowSymbol',
+  // Whole amounts without decimals: "450 €", not "450,00 €".
+  ...(Number.isInteger(n) ? { minimumFractionDigits: 0, maximumFractionDigits: 0 } : {}),
+});
 
-// Un prix s'affiche toujours suivi de « kr », qu'on l'ait tapé avec ou
-// sans : « 450 », « 450kr » et « 450 DKK » donnent tous « 450 kr ».
-function withKr(raw) {
-  const p = String(raw || '').trim()
-    .replace(/^(kr\.?|dkk)\s*/i, '')
-    .replace(/\s*(kr\.?|dkk|kroner|,-)$/i, '')
-    .trim();
+// An amount in the shop's currency: formatMoney(1250) → "1.250 kr".
+// `currency` and `locale` are only for previews in Settings.
+function formatMoney(n, currency, locale) {
+  const value = Math.round((Number(n) || 0) * 100) / 100;
+  try { return moneyFormat(value, currency, locale).format(value); } catch { return String(value); }
+}
+
+// The currency sign alone ("kr", "€", "$"), shown next to price fields.
+function currencySymbol(currency) {
+  try {
+    const part = moneyFormat(1, currency).formatToParts(1).find((p) => p.type === 'currency');
+    return part ? part.value : currency || SHOP.currency;
+  } catch { return currency || SHOP.currency; }
+}
+
+// A price as typed, ready to show: a number gets the shop's currency
+// ('450' → "450 kr"), words stay as they are ('To discuss').
+function priceText(raw) {
+  const p = String(raw || '').trim();
   if (!p) return '';
-  return /\d/.test(p) ? `${p} kr` : p;
+  return /\d/.test(p) ? formatMoney(priceValue(p)) : p;
+}
+
+// What the price field keeps: just the number ('450', '1200.5'), or the
+// words typed. Older prices like '450 kr' become '450'.
+function cleanPriceInput(raw) {
+  const p = String(raw || '').trim();
+  if (!p) return '';
+  return /\d/.test(p) ? String(priceValue(p)) : p;
 }
 
 // Le prix vu par les acheteurs : sans prix, c'est gratuit.
-const showPrice = (raw, lang) => withKr(raw) || (lang === 'fr' ? 'Gratuit' : 'Free');
+const showPrice = (raw, lang) => priceText(raw) || (lang === 'fr' ? 'Gratuit' : 'Free');
 
 /* ------------------------- plusieurs exemplaires -------------------- */
 // Un meuble peut exister en plusieurs exemplaires identiques (2 lits) :
 // `quantity` est le nombre mis en vente, `sold_qty` combien sont partis.
 // Un meuble passé « vendu » d'un coup compte comme entièrement vendu.
-// Avant migration-quantite.sql les colonnes n'existent pas : 1 exemplaire.
+// Avant install.sql les colonnes n'existent pas : 1 exemplaire.
 const totalQty = (item) => Math.max(1, parseInt(item.quantity, 10) || 1);
 const soldQty = (item) =>
   item.status === 'sold' ? totalQty(item) : Math.min(totalQty(item), parseInt(item.sold_qty, 10) || 0);
 const leftQty = (item) => totalQty(item) - soldQty(item);
 
 // Prix réellement obtenus, un par exemplaire vendu, dans l'ordre des ventes
-// (colonne sale_prices, migration-prix-vente.sql).
+// (colonne sale_prices, install.sql).
 const salePrices = (item) =>
   (Array.isArray(item.sale_prices) ? item.sale_prices : []).slice(0, soldQty(item)).map(Number);
 // Ce que le meuble a rapporté : les prix notés, et le prix affiché pour les
@@ -321,19 +384,19 @@ const soldAmount = (item) => {
 // Prix pour `count` exemplaires : « 900 kr », ou le prix tel quel s'il
 // n'y a pas de nombre dedans (gratuit…).
 const priceFor = (raw, count, lang) =>
-  count > 1 && priceValue(raw) > 0 ? fmtKr(priceValue(raw) * count) : showPrice(raw, lang);
+  count > 1 && priceValue(raw) > 0 ? formatMoney(priceValue(raw) * count) : showPrice(raw, lang);
 
 /* --------------------------- meubles réservés ----------------------- */
 // Un rendez-vous retient le meuble (ou les exemplaires demandés) : il quitte
 // la boutique jusqu'à ce que le vendeur note « vendu » ou « invendu ».
-// Avant migration-reservation.sql la colonne outcome n'existe pas : rien
+// Avant install.sql la colonne outcome n'existe pas : rien
 // n'est retenu.
 const isPending = (b) => 'outcome' in b && b.status !== 'declined' && !b.outcome;
 
 // Exemplaires promis à quelqu'un qui a pris rendez-vous ailleurs
 // (Marketplace, DBA…), notés « réservé » par le vendeur : ils quittent la
 // boutique jusqu'à « Vendu » ou « Annuler la réservation ». Colonne
-// reserved_qty, migration-lots.sql ; avant, rien n'est réservé.
+// reserved_qty, install.sql ; avant, rien n'est réservé.
 const reservedQty = (item) => Math.min(leftQty(item), Math.max(0, parseInt(item.reserved_qty, 10) || 0));
 
 // Exemplaires retenus, par meuble. Les acheteurs ne lisent pas les
@@ -343,7 +406,7 @@ async function fetchHeld() {
   return error || !data ? {} : Object.fromEntries(data.map((r) => [r.item_id, r.qty]));
 }
 
-// Les lots, ou null tant que migration-lots.sql n'a pas été lancé.
+// Les lots, ou null tant que install.sql n'a pas été lancé.
 async function fetchBundles() {
   const { data, error } = await sb.from('bundles').select('*').order('created_at', { ascending: false });
   return error ? null : data || [];
@@ -370,10 +433,10 @@ function saveCart(cart) {
 
 // Prix de plusieurs meubles ensemble : « 1.250 kr », ou « Free ».
 const linesTotal = (lines) => lines.reduce((sum, l) => sum + priceValue(l.item.price) * l.count, 0);
-const showTotal = (lines, lang) => (linesTotal(lines) > 0 ? fmtKr(linesTotal(lines)) : showPrice('', lang));
+const showTotal = (lines, lang) => (linesTotal(lines) > 0 ? formatMoney(linesTotal(lines)) : showPrice('', lang));
 const countAll = (lines) => lines.reduce((sum, l) => sum + l.count, 0);
 
-// Relie les lignes d'un même rendez-vous (bookings.cart_id, migration-panier.sql).
+// Relie les lignes d'un même rendez-vous (bookings.cart_id, install.sql).
 function newCartId() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   const b = new Uint8Array(16);
@@ -387,7 +450,7 @@ function newCartId() {
 
 /* -------------------------------- lots ------------------------------ */
 // Plusieurs meubles déjà en vente, vendus ensemble avec une remise (table
-// bundles, migration-lots.sql) : { id, title, items: [{ id, count }],
+// bundles, install.sql) : { id, title, items: [{ id, count }],
 // discount } où discount est en %. Les meubles restent aussi en vente un
 // par un ; le lot quitte la boutique dès que l'un d'eux n'est plus libre.
 const MAX_DISCOUNT = 90;
@@ -408,28 +471,75 @@ const bundlePrices = (lines, pct) => {
 const autoBundleTitle = (lines) =>
   lines.map((l) => `${l.count > 1 ? `${l.count} × ` : ''}${l.item.title}`).join(' + ');
 
-/* ---------------------------- fin de vente -------------------------- */
-// Dernier jour où l'on peut prendre rendez-vous. Après, tout est parti :
-// les calendriers s'arrêtent là et on ne peut pas aller au mois suivant.
-const LAST_DAY = '2026-11-30';
-const LAST_MONTH = LAST_DAY.slice(0, 7); // '2026-11'
+/* ---------------------------- end of sale --------------------------- */
+// Last day buyers can book (settings.last_day). Calendars stop there. With
+// no end date, they look this many days ahead.
+const OPEN_ENDED_DAYS = 120;
+function lastDay() {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(SHOP.lastDay || '')) return SHOP.lastDay;
+  const d = new Date();
+  d.setDate(d.getDate() + OPEN_ENDED_DAYS);
+  return toKey(d);
+}
+const lastMonth = () => lastDay().slice(0, 7); // '2026-11'
 
-/* ---------------------------- paiement ------------------------------ */
-// Choix obligatoire à la réservation : l'acheteur annonce comment il paiera.
-// `id` est ce qui part en base, `en` et `fr` s'affichent selon la langue
-// de l'écran. L'affiche a sa propre liste (posterPayDefault).
-// Un moyen `retired` n'est plus proposé mais reste lisible sur les anciens
-// rendez-vous. Tout nouvel `id` doit aussi être accepté par la base
-// (migration-paiement.sql).
+/* ----------------------------- payment ------------------------------ */
+// Buyers say how they will pay when they book. The seller picks which of
+// these to offer (settings.payment_methods). `id` is what the database
+// keeps; `en` and `fr` are shown. A method the seller stops offering stays
+// readable on the bookings already made with it. notifications.sql has the
+// same labels for the alerts.
 const PAYMENT_METHODS = [
-  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut' },
   { id: 'cash', en: 'Cash', fr: 'Espèces' },
-  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay', retired: true },
+  { id: 'transfer', en: 'Bank transfer', fr: 'Virement bancaire' },
+  { id: 'card', en: 'Card', fr: 'Carte bancaire' },
+  { id: 'revolut', en: 'Revolut instant transfer', fr: 'Virement instantané Revolut' },
+  { id: 'paypal', en: 'PayPal', fr: 'PayPal' },
+  { id: 'wero', en: 'Wero', fr: 'Wero' },
+  { id: 'lydia', en: 'Lydia', fr: 'Lydia' },
+  { id: 'mobilepay', en: 'MobilePay', fr: 'MobilePay' },
+  { id: 'swish', en: 'Swish', fr: 'Swish' },
+  { id: 'vipps', en: 'Vipps', fr: 'Vipps' },
+  { id: 'twint', en: 'TWINT', fr: 'TWINT' },
+  { id: 'bizum', en: 'Bizum', fr: 'Bizum' },
+  { id: 'blik', en: 'BLIK', fr: 'BLIK' },
+  { id: 'satispay', en: 'Satispay', fr: 'Satispay' },
+  { id: 'tikkie', en: 'Tikkie', fr: 'Tikkie' },
+  { id: 'venmo', en: 'Venmo', fr: 'Venmo' },
+  { id: 'zelle', en: 'Zelle', fr: 'Zelle' },
+  { id: 'cashapp', en: 'Cash App', fr: 'Cash App' },
+  { id: 'interac', en: 'Interac e-Transfer', fr: 'Virement Interac' },
+  { id: 'payid', en: 'PayID', fr: 'PayID' },
+  { id: 'upi', en: 'UPI', fr: 'UPI' },
+  { id: 'pix', en: 'Pix', fr: 'Pix' },
 ];
 const paymentLabel = (id, lang) => {
   const m = PAYMENT_METHODS.find((p) => p.id === id);
-  return m ? m[lang] : null;
+  return m ? m[lang] || m.en : null;
 };
+// The methods offered in the shop, in the catalogue's order.
+const offeredPayments = (settings) => {
+  const ids = Array.isArray(settings.payment_methods) && settings.payment_methods.length
+    ? settings.payment_methods : ['cash'];
+  return PAYMENT_METHODS.filter((m) => ids.includes(m.id));
+};
+// The app people use to pay each other in a country, suggested in
+// "First steps" next to cash.
+const COUNTRY_PAYMENT = {
+  DK: 'mobilepay', FI: 'mobilepay', SE: 'swish', NO: 'vipps', CH: 'twint', LI: 'twint',
+  ES: 'bizum', PL: 'blik', IT: 'satispay', NL: 'tikkie', FR: 'lydia', BE: 'wero', DE: 'paypal',
+  AT: 'paypal', LU: 'wero', GB: 'transfer', IE: 'revolut', US: 'venmo', CA: 'interac',
+  AU: 'payid', IN: 'upi', BR: 'pix',
+};
+const suggestedPayments = (country) => ['cash', ...(COUNTRY_PAYMENT[country] ? [COUNTRY_PAYMENT[country]] : [])];
+// The payment line of the shop: the text typed in Schedule, or the ways to
+// pay offered ("Cash or MobilePay").
+function paymentLine(settings, lang) {
+  const typed = String(settings.payment || '').trim();
+  if (typed) return typed;
+  const labels = offeredPayments(settings).map((m) => m[lang] || m.en);
+  try { return new Intl.ListFormat(lang, { type: 'disjunction' }).format(labels); } catch { return labels.join(' / '); }
+}
 
 /* ------------------------------ dates ------------------------------ */
 const pad = (n) => String(n).padStart(2, '0');
@@ -489,7 +599,7 @@ function resizeImage(file, max = 900, quality = 0.72) {
   });
 }
 
-// Photos en plus de la couverture (table item_photos, migration-photos.sql).
+// Photos en plus de la couverture (table item_photos, install.sql).
 // Elles ne viennent pas avec la liste, trop lourdes pour un téléphone : on
 // les charge à l'ouverture de la galerie, une fois par meuble.
 const MAX_PHOTOS = 8;
@@ -595,7 +705,7 @@ function saveFile(blob, name) {
 
 /* ---------------------------- statistiques -------------------------- */
 // Compteur maison, sans cookie ni outil extérieur : la boutique ajoute une
-// ligne dans la table visits (migration-stats.sql) pour chaque visite et
+// ligne dans la table visits (install.sql) pour chaque visite et
 // chaque meuble regardé, une seule fois par session (onglet ouvert). Le
 // vendeur et les essais en local ne comptent pas.
 const STATS_KEY = 'meubles-stats';
@@ -616,7 +726,7 @@ function track(kind, itemId, extra) {
   saveTracker();
   sb.from('visits')
     .insert({ kind, session: tracker.session, item_id: itemId || null, ...extra })
-    // Table absente (migration-stats.sql pas lancé) : on arrête de compter.
+    // Table absente (install.sql pas lancé) : on arrête de compter.
     .then(({ error }) => { if (error) tracker = null; });
 }
 
@@ -932,6 +1042,10 @@ COUNTRIES.forEach((c) => {
   if (!COUNTRY_BY_DIAL[c.dial] || c.iso === 'US' || c.iso === 'RU') COUNTRY_BY_DIAL[c.dial] = c;
 });
 
+// The country offered first for buyers' phone numbers: the shop's own
+// (Settings), else this browser's.
+const homeCountry = () => [SHOP.country, browserCountry()].find((iso) => iso && COUNTRY_BY_ISO[iso]) || 'GB';
+
 // « 1876 » s'écrit « 1 876 » : c'est un +1, suivi du préfixe de l'île.
 const dialText = (c) => (c.dial.length === 4 ? `1 ${c.dial.slice(1)}` : c.dial);
 
@@ -976,7 +1090,7 @@ function nationalOf(c, s) {
 // indicatif (« +33… », « 0033… », ou un numéro rempli par le téléphone),
 // c'est celui-là qui compte : `typedCode`, et `rest` le numéro sans lui.
 function parsePhone(iso, raw) {
-  const picked = COUNTRY_BY_ISO[iso] || COUNTRY_BY_ISO.DK;
+  const picked = COUNTRY_BY_ISO[iso] || COUNTRY_BY_ISO[homeCountry()];
   const s = String(raw || '').trim();
   const intl = s.match(/^(?:\+|00)(.*)$/);
   if (!intl) return { country: picked, typedCode: false, rest: s, national: nationalOf(picked, s) };
@@ -1051,6 +1165,8 @@ const PATHS = {
   message: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   layers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+  database: 'M12 8c4.4 0 8-1.3 8-3s-3.6-3-8-3-8 1.3-8 3 3.6 3 8 3zM4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+  copy: 'M9 9h11v11H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
 };
 
 function Icon({ name, className }) {
@@ -1129,7 +1245,8 @@ function scheduleFor(item, settings) {
   const from = item.available_from ? String(item.available_from).slice(0, 10) : null;
   const itemUntil = item.available_to ? String(item.available_to).slice(0, 10) : null;
   // Rien au-delà du dernier jour de vente, même si l'annonce dit plus tard.
-  const until = itemUntil && itemUntil < LAST_DAY ? itemUntil : LAST_DAY;
+  const end = lastDay();
+  const until = itemUntil && itemUntil < end ? itemUntil : end;
   const start = from && from > todayKey() ? from : todayKey();
   return { weekdays, slots, from, until, start, closed: new Set(settings.blocked || []) };
 }
@@ -1187,11 +1304,11 @@ function App() {
   const [busy, setBusy] = useState([]);
   // Exemplaires retenus par un rendez-vous, par meuble (fetchHeld).
   const [held, setHeld] = useState({});
-  // Lots (migration-lots.sql) ; bundlesMissing tant que la table n'existe pas.
+  // Lots (install.sql) ; bundlesMissing tant que la table n'existe pas.
   const [bundles, setBundles] = useState([]);
   const [bundlesMissing, setBundlesMissing] = useState(false);
   const [bookings, setBookings] = useState([]);
-  // Demandes de contact (migration-panier.sql) ; missing tant que la table
+  // Demandes de contact (install.sql) ; missing tant que la table
   // n'existe pas.
   const [messages, setMessages] = useState([]);
   const [messagesMissing, setMessagesMissing] = useState(false);
@@ -1199,8 +1316,13 @@ function App() {
   const [loadFailed, setLoadFailed] = useState(false);
   // Nombre de photos en plus de la couverture, par meuble.
   const [photoCounts, setPhotoCounts] = useState({});
-  // false tant que migration-photos.sql n'a pas été lancé.
+  // false tant que install.sql n'a pas été lancé.
   const [manyPhotos, setManyPhotos] = useState(false);
+  // 'ok', 'missing' (install.sql never run) or 'outdated' (run with an
+  // older version): the seller space then says what to do.
+  const [dbState, setDbState] = useState('ok');
+  // Is the signed-in account this shop's seller? null until known.
+  const [isSeller, setIsSeller] = useState(null);
   const [toasts, setToasts] = useState([]);
 
   const pushToast = useCallback((text, tone) => {
@@ -1210,7 +1332,7 @@ function App() {
   }, []);
 
   /* ---- langues ---- */
-  // Sans migration-langue.sql, les colonnes manquent : boutique en anglais,
+  // Sans install.sql, les colonnes manquent : boutique en anglais,
   // espace vendeur dans la langue gardée par ce navigateur.
   const shopLang = cleanLang(settings.shop_lang, 'en');
   const adminLang = cleanLang(settings.admin_lang, adminLangSaved);
@@ -1229,12 +1351,22 @@ function App() {
     if ('admin_lang' in settings) setSettings((s) => ({ ...s, admin_lang: lang }));
   };
 
+  // Currency, country, end date and goal, for the helpers that format
+  // prices and draw calendars. Set during render, before any child draws.
+  Object.assign(SHOP, {
+    currency: /^[A-Z]{3}$/.test(settings.currency || '') ? settings.currency : 'EUR',
+    country: /^[A-Z]{2}$/.test(settings.country || '') ? settings.country : '',
+    lang: shopLang,
+    lastDay: settings.last_day ? String(settings.last_day).slice(0, 10) : '',
+    goal: Number(settings.sales_goal) || 0,
+  });
+
   // La page parle la langue de l'écran affiché (lecteurs d'écran,
   // traduction automatique du navigateur).
   useEffect(() => {
     document.documentElement.lang = route === 'shop' ? shopLang : adminLang;
-    document.title = shopLang === 'fr' ? 'Meubles à vendre — Odense' : 'Furniture for sale — Odense';
-  }, [route, shopLang, adminLang]);
+    document.title = shopTitle(settings, shopLang);
+  }, [route, shopLang, adminLang, settings.shop_title]);
 
   /* ---- session ---- */
   useEffect(() => {
@@ -1296,7 +1428,12 @@ function App() {
     // photos), et la boutique peut s'afficher dans sa langue sans attendre.
     const settingsLoad = sb.from('settings').select('*').eq('id', 1).maybeSingle()
       .then((st) => {
-        if (st.data) setSettings({ ...DEFAULT_SETTINGS, ...st.data });
+        const code = (st.error && st.error.code) || '';
+        if (['42P01', 'PGRST205', 'PGRST106'].includes(code)) setDbState('missing');
+        else if (st.data) {
+          setSettings({ ...DEFAULT_SETTINGS, ...st.data });
+          setDbState((Number(st.data.schema_version) || 0) < SCHEMA_VERSION ? 'outdated' : 'ok');
+        } else if (!st.error) setDbState('outdated');
         setSettingsReady(true);
       }, () => setSettingsReady(true));
     const [it, , bs, ph, hd, bu] = await Promise.all([
@@ -1346,6 +1483,16 @@ function App() {
 
   useEffect(() => { loadPublic(); }, [loadPublic]);
   useEffect(() => { loadBookings(); }, [loadBookings]);
+  // Only the first account created is the seller (install.sql). Another
+  // account can sign in but sees nothing private: it is told so. On a
+  // database without is_seller(), the account is trusted as before.
+  useEffect(() => {
+    if (!sb || !session) { setIsSeller(null); return undefined; }
+    let live = true;
+    sb.rpc('is_seller').then(({ data, error }) => { if (live) setIsSeller(error ? true : data === true); },
+                            () => { if (live) setIsSeller(true); });
+    return () => { live = false; };
+  }, [session]);
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
   /* ---- alerte temps réel sur les nouveaux rendez-vous et messages ---- */
@@ -1393,18 +1540,7 @@ function App() {
   const newCount = bookings.filter((b) => b.status === 'new').length;
   const newMessages = messages.filter((m) => m.status === 'new').length;
 
-  if (!configured) {
-    return (
-      <div className="max-w-xl mx-auto px-5 py-24">
-        <h1 className="display text-2xl font-bold">Configuration à terminer</h1>
-        <p className="mt-3 text-slate-600 leading-relaxed">
-          Ouvre <code className="bg-blue-50 px-1.5 py-0.5 rounded">index.html</code> et remplace
-          les deux valeurs de <code className="bg-blue-50 px-1.5 py-0.5 rounded">window.CONFIG</code>{' '}
-          par l’URL et la clé anon de ton projet Supabase, puis recharge la page.
-        </p>
-      </div>
-    );
-  }
+  if (!configured) return <NotConfigured />;
 
   return (
     <ShopLangContext.Provider value={shopLang}>
@@ -1466,6 +1602,9 @@ function App() {
           messagesMissing={messagesMissing}
           settings={settings}
           setSettings={setSettings}
+          dbState={dbState}
+          isSeller={isSeller}
+          onRecheck={() => { setReady(false); loadPublic(); }}
           shopLang={shopLang}
           adminLang={adminLang}
           onAdminLang={setAdminLang}
@@ -1640,7 +1779,7 @@ function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFa
 
   // Prénom et numéro tapés une fois servent aux fenêtres suivantes (gardés
   // le temps de la visite seulement).
-  const [buyer, setBuyer] = useState({ firstName: '', phone: '', country: 'DK' });
+  const [buyer, setBuyer] = useState(() => ({ firstName: '', phone: '', country: homeCountry() }));
 
   const booked = (rows) => {
     // Le panier d'abord : ces meubles partent parce que c'est lui qui les a
@@ -1680,7 +1819,7 @@ function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFa
     [t('Book a time', 'Réserver'),
      t('Choose a day, leave your first name and number.', 'Choisissez un jour, laissez votre prénom et votre numéro.')],
     [t('Pick up & pay', 'Retirer et payer'),
-     t(`I text you to confirm. Pay by ${settings.payment}.`, `Je vous écris pour confirmer. Paiement : ${settings.payment}.`)],
+     t(`I text you to confirm. Pay by ${paymentLine(settings, 'en')}.`, `Je vous écris pour confirmer. Paiement : ${paymentLine(settings, 'fr')}.`)],
   ];
   const itemWord = (n) => t(`item${n > 1 ? 's' : ''}`, `meuble${n > 1 ? 's' : ''}`);
 
@@ -1688,21 +1827,18 @@ function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFa
     <div className={`min-h-screen bg-slate-50 ${cartLines.length ? 'pb-24' : ''}`}>
       <header className="bg-blue-800 text-white">
         <div className="max-w-5xl mx-auto px-5 pt-9 pb-16 sm:pt-14 sm:pb-20">
-          <p className="text-blue-200 text-sm font-medium">{t('Moving out of Odense on 20 November', 'Je quitte Odense le 20 novembre')}</p>
-          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight mt-1">{t('Furniture for sale', 'Meubles à vendre')}</h1>
-          <p className="mt-3 text-blue-100 text-lg leading-relaxed max-w-xl">
-            {t('My internship is ending, so everything has to go and prices are low.',
-               'Mon stage se termine : tout doit partir, et les prix sont bas.')}
-          </p>
+          <p className="text-blue-200 text-sm font-medium">{shopIntro(settings, t.lang)}</p>
+          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight mt-1">{shopTitle(settings, t.lang)}</h1>
+          <p className="mt-3 text-blue-100 text-lg leading-relaxed max-w-xl whitespace-pre-line">{shopText(settings, t.lang)}</p>
           <div className="mt-5 flex flex-wrap gap-2 text-sm">
             {settings.address && (
               <a href="#where" className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1.5">
                 <Icon name="pin" className="w-4 h-4" /> {settings.address}
               </a>
             )}
-            {settings.payment && (
+            {paymentLine(settings, t.lang) && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
-                <Icon name="card" className="w-4 h-4" /> {settings.payment}
+                <Icon name="card" className="w-4 h-4" /> {paymentLine(settings, t.lang)}
               </span>
             )}
             <button type="button" onClick={() => setSheet({ kind: 'contact', target: null })}
@@ -1861,7 +1997,7 @@ function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFa
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-5xl mx-auto px-5 py-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-          <span>{t('Pickup only', 'Retrait sur place uniquement')} · {settings.payment}</span>
+          <span>{t('Pickup only', 'Retrait sur place uniquement')} · {paymentLine(settings, t.lang)}</span>
           <button onClick={() => setSheet({ kind: 'contact', target: null })}
                   className="inline-flex items-center gap-1.5 text-blue-700 font-medium hover:underline">
             <Icon name="message" className="w-3.5 h-3.5" /> {t('Contact me', 'Me contacter')}
@@ -2153,14 +2289,14 @@ function BundleCard({ bundle, lines, onBook, onAsk, onPhoto, preview }) {
             <h4 className="display font-bold text-xl leading-snug">{title}</h4>
             <span className="shrink-0 text-right">
               <span className="block display font-bold text-xl text-blue-700 whitespace-nowrap">
-                {full > 0 ? fmtKr(price) : showPrice('', t.lang)}
+                {full > 0 ? formatMoney(price) : showPrice('', t.lang)}
               </span>
-              {pct > 0 && full > 0 && <s className="block text-sm text-slate-400 whitespace-nowrap">{fmtKr(full)}</s>}
+              {pct > 0 && full > 0 && <s className="block text-sm text-slate-400 whitespace-nowrap">{formatMoney(full)}</s>}
             </span>
           </div>
           {pct > 0 && saved > 0 && (
             <p className="mt-1 text-sm font-semibold text-green-700">
-              {t(`You save ${fmtKr(saved)}`, `Vous économisez ${fmtKr(saved)}`)}
+              {t(`You save ${formatMoney(saved)}`, `Vous économisez ${formatMoney(saved)}`)}
             </p>
           )}
 
@@ -2205,8 +2341,8 @@ function BundleSummary({ bundle, lines }) {
         )}
       </span>
       <span className="whitespace-nowrap">
-        {pct > 0 && full > 0 && <s className="mr-2 text-sm font-normal text-slate-400">{fmtKr(full)}</s>}
-        <span className="text-blue-700">{full > 0 ? fmtKr(price) : showPrice('', t.lang)}</span>
+        {pct > 0 && full > 0 && <s className="mr-2 text-sm font-normal text-slate-400">{formatMoney(full)}</s>}
+        <span className="text-blue-700">{full > 0 ? formatMoney(price) : showPrice('', t.lang)}</span>
       </span>
     </p>
   );
@@ -2353,7 +2489,8 @@ function CountryPicker({ value, onPick, onClose }) {
   const found = !q ? null
     : byCode ? all.filter((c) => c.dial.startsWith(q.replace(/\D/g, '')))
     : all.filter((c) => ` ${c.search}`.includes(` ${fold(q)}`));
-  const top = value === 'DK' ? [COUNTRY_BY_ISO.DK] : [COUNTRY_BY_ISO.DK, COUNTRY_BY_ISO[value]].filter(Boolean);
+  const home = homeCountry();
+  const top = value === home ? [COUNTRY_BY_ISO[home]] : [COUNTRY_BY_ISO[home], COUNTRY_BY_ISO[value]].filter(Boolean);
 
   const row = (c) => {
     const on = c.iso === value;
@@ -2479,7 +2616,7 @@ function LinesList({ lines }) {
 function usePhoneField(initial) {
   const [phone, setPhone] = useState((initial && initial.phone) || '');
   // Le pays de l'indicatif, choisi dans la liste à drapeaux.
-  const [country, setCountry] = useState((initial && initial.country) || 'DK');
+  const [country, setCountry] = useState((initial && initial.country) || homeCountry());
   const [picking, setPicking] = useState(false);
   const phoneRef = useRef(null);
   const codeRef = useRef(null);
@@ -2668,7 +2805,11 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
   const [slot, setSlot] = useState(null);
   const [firstName, setFirstName] = useState(buyer.firstName || '');
   const phoneField = usePhoneField(buyer);
-  const [payment, setPayment] = useState('');
+  // Only one way to pay on offer: already chosen.
+  const [payment, setPayment] = useState(() => {
+    const offered = offeredPayments(settings);
+    return offered.length === 1 ? offered[0].id : '';
+  });
   // Un seul meuble en plusieurs exemplaires : l'acheteur dit combien il en
   // prend. Pour le panier, les nombres viennent du panier.
   const [count, setCount] = useState(() => (lines[0] ? Math.max(1, Math.min(lines[0].count, lines[0].left)) : 1));
@@ -2734,10 +2875,10 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
       slot,
       status: 'new',
       // Envoyés seulement s'ils servent : réserver un seul meuble marche
-      // même si migration-quantite.sql ou migration-panier.sql manquent.
+      // même sur une base plus ancienne qui n'a pas ces colonnes.
       ...(l.count > 1 ? { quantity: l.count } : {}),
       ...(cartId ? { cart_id: cartId } : {}),
-      // Le titre et la remise du lot sont recopiés par la base (migration-lots.sql).
+      // Le titre et la remise du lot sont recopiés par la base (install.sql).
       ...(bundle ? { bundle_id: bundle.id } : {}),
     }));
     // Tout ou rien : si un seul meuble est déjà pris, rien n'est réservé.
@@ -2750,7 +2891,7 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
                            'Désolé, quelqu’un vient de prendre ce créneau. Choisissez-en un autre.'));
     }
     // item_taken = quelqu'un d'autre vient de réserver un de ces meubles
-    // (migration-reservation.sql). La liste est relue : ce qui n'est plus
+    // (install.sql). La liste est relue : ce qui n'est plus
     // libre sort du panier, et la fenêtre le dit s'il ne reste rien.
     if (err && err.message === 'bundle_gone') {
       onItemTaken();
@@ -2904,7 +3045,7 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
           {t('Nothing to pay now — you pay when you pick it up.', 'Rien à payer maintenant : vous payez au retrait.')}
         </span>
         <div className="mt-2 grid gap-2" role="radiogroup">
-          {PAYMENT_METHODS.filter((m) => !m.retired).map((m) => {
+          {offeredPayments(settings).map((m) => {
             const on = payment === m.id;
             return (
               <button key={m.id} role="radio" aria-checked={on}
@@ -3004,7 +3145,7 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
               <span>
                 <span className="block font-semibold">
                   {one ? priceFor(one.item.price, one.count, t.lang)
-                    : bundle && linesTotal(done.lines) > 0 ? `${fmtKr(bundlePrices(done.lines, pct).price)}${pct ? ` (${pctText(pct, t.lang)})` : ''}`
+                    : bundle && linesTotal(done.lines) > 0 ? `${formatMoney(bundlePrices(done.lines, pct).price)}${pct ? ` (${pctText(pct, t.lang)})` : ''}`
                     : showTotal(done.lines, t.lang)}
                 </span>
                 <span className="block text-sm text-slate-500">
@@ -3082,7 +3223,7 @@ function BookingSheet({ lines, bundle, busy, settings, buyer, onBuyer, onClose, 
 
 // « Rappelez-moi » : prénom, numéro et un message, sur un meuble, sur le
 // panier ou en général (lines vide). Rien n'est réservé ; la demande arrive
-// dans l'onglet Messages de l'espace vendeur (migration-panier.sql).
+// dans l'onglet Messages de l'espace vendeur (install.sql).
 function ContactSheet({ lines, bundle, buyer, onBuyer, onClose, onBook }) {
   const t = useT();
   // Les meubles tels qu'à l'ouverture : la demande garde sa liste même si
@@ -3248,9 +3389,12 @@ function ContactSheet({ lines, bundle, buyer, onBuyer, onClose, onBook }) {
 function Admin({ session, authReady, recovering, linkProblem, onRecovered,
                  items, setItems, bundles, setBundles, bundlesMissing, manyPhotos, photoCounts, setPhotoCounts,
                  bookings, setBookings, messages, setMessages, messagesMissing, settings, setSettings,
+                 dbState, isSeller, onRecheck,
                  shopLang, adminLang, onAdminLang, newCount, newMessages, reload, pushToast, onShop }) {
   const t = useT();
   const [tab, setTab] = useState('annonces');
+  // "Continue without updating" on the update screen, for this visit only.
+  const [skipUpdate, setSkipUpdate] = useState(false);
 
   if (!authReady) {
     return <p className="min-h-screen flex items-center justify-center text-slate-500">{t('Loading…', 'Chargement…')}</p>;
@@ -3259,7 +3403,18 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
   if (session && recovering) {
     return <NewPassword email={session.user && session.user.email} onDone={onRecovered} />;
   }
+  // A new Supabase project: the tables come first, then the account.
+  if (dbState === 'missing') return <DatabaseScreen state="missing" onRecheck={onRecheck} onShop={onShop} />;
   if (!session) return <Login onShop={onShop} linkProblem={linkProblem} />;
+  if (isSeller === false) return <NotSeller email={session.user && session.user.email} onShop={onShop} />;
+  if (dbState === 'outdated' && !skipUpdate) {
+    return <DatabaseScreen state="outdated" onRecheck={onRecheck} onShop={onShop} onSkip={() => setSkipUpdate(true)} />;
+  }
+  // First sign-in: languages, currency and the shop's words.
+  if (dbState === 'ok' && settings.setup_done === false) {
+    return <FirstSteps settings={settings} setSettings={setSettings} adminLang={adminLang}
+                       onAdminLang={onAdminLang} pushToast={pushToast} />;
+  }
 
   return (
     <div>
@@ -3330,6 +3485,421 @@ function Admin({ session, authReady, recovering, linkProblem, onRecovered,
                          onAdminLang={onAdminLang} pushToast={pushToast} onShop={onShop} />
         )}
       </main>
+    </div>
+  );
+}
+
+/* ===================== SET-UP SCREENS (seller side) ===================== */
+
+// config.js is missing or still holds its placeholders.
+function NotConfigured() {
+  const t = makeT(/^fr\b/i.test(navigator.language || '') ? 'fr' : 'en');
+  const code = (text) => <code className="bg-blue-50 px-1.5 py-0.5 rounded text-[0.95em]">{text}</code>;
+  return (
+    <LangContext.Provider value={t.lang}>
+      <AuthCard icon="key" title={t('Almost there', 'Presque fini')}
+                text={t('This shop is not connected to its database yet.', 'Cette boutique n’est pas encore reliée à sa base de données.')}>
+        <ol className="mt-4 space-y-3 text-sm text-slate-700 leading-relaxed list-decimal pl-5">
+          <li>{t(<>In Supabase, open <b>Project Settings → Data API</b>.</>, <>Dans Supabase, ouvre <b>Project Settings → Data API</b>.</>)}</li>
+          <li>{t(<>Paste the <b>Project URL</b> and the <b>anon public</b> key into {code('config.js')}.</>,
+                 <>Colle la <b>Project URL</b> et la clé <b>anon public</b> dans {code('config.js')}.</>)}</li>
+          <li>{t('Save, wait a minute, then reload this page.', 'Enregistre, attends une minute, puis recharge cette page.')}</li>
+        </ol>
+        <p className="mt-4 text-xs text-slate-500 leading-relaxed">
+          {t(<>Never paste the {code('service_role')} key: it opens everything.</>,
+             <>Ne colle jamais la clé {code('service_role')} : elle ouvre tout.</>)}
+        </p>
+      </AuthCard>
+    </LangContext.Provider>
+  );
+}
+
+// The tables are missing (new project) or older than this page expects.
+// Both are fixed by running install.sql in Supabase.
+function DatabaseScreen({ state, onRecheck, onShop, onSkip }) {
+  const t = useT();
+  const missing = state === 'missing';
+  const [copied, setCopied] = useState('');
+  const sqlEditor = SUPABASE_REF ? `https://supabase.com/dashboard/project/${SUPABASE_REF}/sql/new`
+                                 : 'https://supabase.com/dashboard/projects';
+  const users = SUPABASE_REF ? `https://supabase.com/dashboard/project/${SUPABASE_REF}/auth/users`
+                             : 'https://supabase.com/dashboard/projects';
+  // install.sql sits next to this page on GitHub Pages.
+  const copy = async () => {
+    try {
+      const res = await fetch('install.sql', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      await navigator.clipboard.writeText(await res.text());
+      setCopied('yes');
+    } catch { setCopied('no'); }
+  };
+  const step = (n, title, body) => (
+    <li className="flex gap-3">
+      <span className="w-7 h-7 rounded-full bg-blue-700 text-white text-sm font-bold inline-flex items-center justify-center shrink-0">{n}</span>
+      <div className="min-w-0 flex-1 pt-0.5">
+        <p className="font-semibold">{title}</p>
+        <div className="mt-1 text-sm text-slate-600 leading-relaxed">{body}</div>
+      </div>
+    </li>
+  );
+  const link = 'inline-flex items-center gap-1.5 font-semibold text-blue-700 hover:underline';
+  const footer = (
+    <button onClick={onShop} className="mt-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-blue-700">
+      <Icon name="store" className="w-4 h-4" /> {t('Back to the shop', 'Retour à la boutique')}
+    </button>
+  );
+
+  return (
+    <AuthCard icon="database" footer={footer}
+              title={missing ? t('Create the database', 'Créer la base de données') : t('Update the database', 'Mettre à jour la base de données')}
+              text={missing
+                ? t('One step in Supabase, about a minute. You do it once.', 'Une étape dans Supabase, une minute environ. À faire une seule fois.')
+                : t('This version of the shop needs a newer database. Your listings, bookings and settings stay as they are.',
+                    'Cette version de la boutique a besoin d’une base plus récente. Tes annonces, rendez-vous et réglages restent tels quels.')}>
+      <ol className="mt-5 space-y-4">
+        {step(1, t('Copy the script', 'Copie le script'), (
+          <>
+            <button onClick={copy} className={link}>
+              <Icon name={copied === 'yes' ? 'check' : 'copy'} className="w-4 h-4" />
+              {copied === 'yes' ? t('Copied', 'Copié') : t('Copy install.sql', 'Copier install.sql')}
+            </button>
+            {copied === 'no' && (
+              <span className="block mt-1">
+                {t('Copying did not work here: ', 'La copie n’a pas marché ici : ')}
+                <a href="install.sql" target="_blank" rel="noopener" className="text-blue-700 underline">
+                  {t('open install.sql', 'ouvre install.sql')}</a>
+                {t(', select all and copy.', ', sélectionne tout et copie.')}
+              </span>
+            )}
+          </>
+        ))}
+        {step(2, t('Run it in Supabase', 'Lance-le dans Supabase'), (
+          <>
+            <a href={sqlEditor} target="_blank" rel="noopener" className={link}>
+              {t('Open the SQL Editor', 'Ouvrir le SQL Editor')} <Icon name="external" className="w-4 h-4" />
+            </a>
+            <span className="block mt-1">{t('Paste, then click Run. It is safe to run again.', 'Colle, puis clique sur Run. On peut le relancer sans risque.')}</span>
+          </>
+        ))}
+        {missing && step(3, t('Create your seller account', 'Crée ton compte vendeur'), (
+          <>
+            <a href={users} target="_blank" rel="noopener" className={link}>
+              {t('Authentication → Users', 'Authentication → Users')} <Icon name="external" className="w-4 h-4" />
+            </a>
+            <span className="block mt-1">
+              {t('Add user → Create new user, tick Auto Confirm User. The first account becomes the seller.',
+                 'Add user → Create new user, coche Auto Confirm User. Le premier compte créé devient le vendeur.')}
+            </span>
+          </>
+        ))}
+      </ol>
+      <button onClick={onRecheck} className="mt-6 w-full font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl py-3 inline-flex items-center justify-center gap-2">
+        <Icon name="refresh" className="w-4 h-4" /> {t('Done, check again', 'C’est fait, vérifier')}
+      </button>
+      {onSkip && (
+        <button onClick={onSkip} className="mt-3 w-full text-sm text-slate-500 hover:text-slate-800">
+          {t('Continue without updating', 'Continuer sans mettre à jour')}
+        </button>
+      )}
+    </AuthCard>
+  );
+}
+
+// Signed in, but not with the shop's seller account (install.sql: only the
+// first account created is the seller).
+function NotSeller({ email, onShop }) {
+  const t = useT();
+  return (
+    <AuthCard icon="lock" title={t('Not the seller’s account', 'Pas le compte du vendeur')}
+              text={t(`${email || 'This account'} is signed in, but this shop belongs to the first account created in Supabase. It sees no bookings and no messages.`,
+                      `${email || 'Ce compte'} est connecté, mais cette boutique appartient au premier compte créé dans Supabase. Il ne voit ni rendez-vous ni messages.`)}
+              footer={(
+                <button onClick={onShop} className="mt-6 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-blue-700">
+                  <Icon name="store" className="w-4 h-4" /> {t('Back to the shop', 'Retour à la boutique')}
+                </button>
+              )}>
+      <button onClick={() => sb.auth.signOut()}
+              className="mt-5 w-full font-semibold bg-blue-700 hover:bg-blue-800 text-white rounded-xl py-3 inline-flex items-center justify-center gap-2">
+        <Icon name="logout" className="w-4 h-4" /> {t('Sign in with another account', 'Se connecter avec un autre compte')}
+      </button>
+    </AuthCard>
+  );
+}
+
+/* ------------------ country, currency and ways to pay ----------------- */
+const CURRENCY_NAMES = {};
+function currencyName(code, lang) {
+  try {
+    CURRENCY_NAMES[lang] = CURRENCY_NAMES[lang] || new Intl.DisplayNames([lang], { type: 'currency' });
+    return CURRENCY_NAMES[lang].of(code) || code;
+  } catch { return code; }
+}
+const localeFor = (lang, country) => {
+  const wanted = country ? `${lang}-${country}` : lang;
+  try { return Intl.NumberFormat.supportedLocalesOf([wanted])[0] || lang; } catch { return lang; }
+};
+const browserTimeZone = () => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
+};
+const FIELD_SM = 'mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white';
+
+// Used by "First steps" and the Settings tab. `value` holds country,
+// currency, payment_methods and shop_lang; `onChange` receives a patch.
+// Picking a country suggests its currency and ways to pay until the
+// seller picks them by hand.
+function SaleFields({ value, onChange }) {
+  const t = useT();
+  const [touched, setTouched] = useState({ currency: false, payments: false });
+  const methods = Array.isArray(value.payment_methods) ? value.payment_methods : [];
+  const example = formatMoney(1250, value.currency, localeFor(cleanLang(value.shop_lang, 'en'), value.country));
+  const currencies = [...CURRENCIES].sort((a, b) => currencyName(a, t.lang).localeCompare(currencyName(b, t.lang), t.lang));
+
+  const pickCountry = (iso) => {
+    const patch = { country: iso };
+    if (!touched.currency && currencyOfCountry(iso)) patch.currency = currencyOfCountry(iso);
+    if (!touched.payments) patch.payment_methods = suggestedPayments(iso);
+    onChange(patch);
+  };
+  const toggleMethod = (id) => {
+    const next = methods.includes(id) ? methods.filter((m) => m !== id) : [...methods, id];
+    if (!next.length) return;
+    setTouched((x) => ({ ...x, payments: true }));
+    onChange({ payment_methods: PAYMENT_METHODS.map((m) => m.id).filter((m) => next.includes(m)) });
+  };
+
+  return (
+    <div className="space-y-6">
+      <label className="block">
+        <span className="font-semibold">{t('Country', 'Pays')}</span>
+        <span className="block text-sm text-slate-500 leading-relaxed">
+          {t('Where you sell. Buyers’ phone numbers start with this country.', 'Là où tu vends. Le numéro des acheteurs commence par ce pays.')}
+        </span>
+        <select value={value.country || ''} onChange={(e) => pickCountry(e.target.value)} className={FIELD_SM}>
+          <option value="" disabled>{t('Choose a country', 'Choisis un pays')}</option>
+          {countriesIn(t.lang).map((c) => <option key={c.iso} value={c.iso}>{c.flag} {countryName(c, t.lang)}</option>)}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="font-semibold">{t('Currency', 'Devise')}</span>
+        <span className="block text-sm text-slate-500 leading-relaxed">
+          {t(`Every price in the shop and on the poster. A price of 1250 shows as ${example}.`,
+             `Tous les prix de la boutique et de l’affiche. Un prix de 1250 s’affiche ${example}.`)}
+        </span>
+        <select value={value.currency || ''}
+                onChange={(e) => { setTouched((x) => ({ ...x, currency: true })); onChange({ currency: e.target.value }); }}
+                className={FIELD_SM}>
+          {currencies.map((c) => <option key={c} value={c}>{currencyName(c, t.lang)} ({c})</option>)}
+        </select>
+      </label>
+
+      <fieldset>
+        <legend className="font-semibold">{t('Ways to pay', 'Moyens de paiement')}</legend>
+        <span className="block text-sm text-slate-500 leading-relaxed">
+          {t('Buyers pick one when they book. Nothing is paid online.', 'Les acheteurs en choisissent un en réservant. Rien n’est payé en ligne.')}
+        </span>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {PAYMENT_METHODS.map((m) => {
+            const on = methods.includes(m.id);
+            return (
+              <button key={m.id} type="button" aria-pressed={on} onClick={() => toggleMethod(m.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm ${
+                        on ? 'border-blue-700 bg-blue-50 text-blue-800 font-semibold' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'}`}>
+                {on && <Icon name="check" className="w-3.5 h-3.5" />}{m[t.lang] || m.en}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
+// The shop header: line above the title, title, text. Empty fields show
+// neutral words in the shop language (the placeholders).
+function ShopWordsFields({ value, onChange }) {
+  const t = useT();
+  const lang = cleanLang(value.shop_lang, 'en');
+  const inLang = lang === 'fr' ? t('in French', 'en français') : t('in English', 'en anglais');
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-500 leading-relaxed">
+        {t(`Written ${inLang}, the shop language. Leave a field empty to keep the suggested words.`,
+           `Écrits ${inLang}, la langue de la boutique. Laisse un champ vide pour garder les mots proposés.`)}
+      </p>
+      <label className="block">
+        <span className="text-sm text-slate-600">{t('Small line above the title', 'Petite ligne au-dessus du titre')}</span>
+        <input value={value.shop_intro || ''} onChange={(e) => onChange({ shop_intro: e.target.value })} maxLength={80}
+               className={FIELD_SM} placeholder={shopIntro({}, lang)} />
+      </label>
+      <label className="block">
+        <span className="text-sm text-slate-600">{t('Title', 'Titre')}</span>
+        <input value={value.shop_title || ''} onChange={(e) => onChange({ shop_title: e.target.value })} maxLength={60}
+               className={FIELD_SM} placeholder={shopTitle({}, lang)} />
+      </label>
+      <label className="block">
+        <span className="text-sm text-slate-600">{t('A few words under the title', 'Quelques mots sous le titre')}</span>
+        <textarea value={value.shop_text || ''} onChange={(e) => onChange({ shop_text: e.target.value })} maxLength={300} rows={3}
+                  className={FIELD_SM} placeholder={shopText({}, lang)} />
+      </label>
+      <div className="rounded-xl bg-blue-800 text-white px-4 py-4" aria-hidden="true">
+        <p className="text-blue-200 text-xs font-medium">{shopIntro(value, lang)}</p>
+        <p className="display font-bold text-2xl leading-tight mt-0.5 break-words">{shopTitle(value, lang)}</p>
+        <p className="mt-1 text-blue-100 text-sm leading-relaxed whitespace-pre-line break-words">{shopText(value, lang)}</p>
+      </div>
+    </div>
+  );
+}
+
+// End date and goal, both optional.
+function SaleLimitsFields({ value, onChange }) {
+  const t = useT();
+  return (
+    <div className="grid sm:grid-cols-2 gap-4">
+      <label className="block">
+        <span className="text-sm text-slate-600">{t('Last day for viewings (optional)', 'Dernier jour de visite (facultatif)')}</span>
+        <input type="date" value={value.last_day ? String(value.last_day).slice(0, 10) : ''} min={todayKey()}
+               onChange={(e) => onChange({ last_day: e.target.value || null })} className={FIELD_SM} />
+        <span className="block text-xs text-slate-500 mt-1">
+          {t('Calendars stop there. Empty: no end date.', 'Les calendriers s’arrêtent là. Vide : pas de date de fin.')}
+        </span>
+      </label>
+      <label className="block">
+        <span className="text-sm text-slate-600">{t('Sales goal (optional)', 'Objectif de vente (facultatif)')}</span>
+        <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
+          <input value={value.sales_goal == null ? '' : String(value.sales_goal)} inputMode="decimal"
+                 onChange={(e) => onChange({ sales_goal: e.target.value })}
+                 className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="3000" />
+          <span className="pr-3 text-slate-500 whitespace-nowrap">{currencySymbol(value.currency || SHOP.currency)}</span>
+        </span>
+        <span className="block text-xs text-slate-500 mt-1">
+          {t('Shown above your listings, with how far you are.', 'Affiché au-dessus de tes annonces, avec où tu en es.')}
+        </span>
+      </label>
+    </div>
+  );
+}
+const cleanGoal = (raw) => (priceValue(raw) > 0 ? priceValue(raw) : null);
+
+/* ============================ FIRST STEPS ============================ */
+// Shown once, at the seller's first sign-in (settings.setup_done is false):
+// languages, then country, currency and ways to pay, then the shop's words.
+// Everything stays editable in Settings.
+function FirstSteps({ settings, setSettings, adminLang, onAdminLang, pushToast }) {
+  const t = useT();
+  const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(() => {
+    const country = COUNTRY_BY_ISO[settings.country] ? settings.country
+      : COUNTRY_BY_ISO[browserCountry()] ? browserCountry() : '';
+    const methods = Array.isArray(settings.payment_methods) ? settings.payment_methods : [];
+    return {
+      shop_lang: cleanLang(settings.shop_lang, adminLang),
+      country,
+      currency: settings.currency || currencyOfCountry(country) || 'EUR',
+      // The database default ('cash' alone) gets the country's usual app too.
+      payment_methods: methods.length && methods.join() !== 'cash' ? methods : suggestedPayments(country),
+      shop_title: settings.shop_title || '',
+      shop_intro: settings.shop_intro || '',
+      shop_text: settings.shop_text || '',
+      last_day: settings.last_day || null,
+      sales_goal: settings.sales_goal == null ? '' : settings.sales_goal,
+    };
+  });
+  const change = (patch) => setDraft((d) => ({ ...d, ...patch }));
+
+  const steps = [
+    { title: t('Welcome! Which languages?', 'Bienvenue ! Quelles langues ?'),
+      intro: t('Three quick questions, then you can add your first listing.', 'Trois petites questions, puis tu pourras ajouter ta première annonce.') },
+    { title: t('Where do you sell?', 'Où vends-tu ?'),
+      intro: t('Your country sets the currency and the usual ways to pay. Change anything you like.', 'Ton pays donne la devise et les moyens de paiement courants. Change ce que tu veux.') },
+    { title: t('Your shop', 'Ta boutique'),
+      intro: t('What buyers read first. All optional.', 'Ce que les acheteurs lisent en premier. Tout est facultatif.') },
+  ];
+
+  const finish = async () => {
+    setSaving(true);
+    const patch = {
+      admin_lang: adminLang,
+      shop_lang: draft.shop_lang,
+      country: draft.country || null,
+      currency: draft.currency,
+      payment_methods: draft.payment_methods,
+      shop_title: draft.shop_title.trim(),
+      shop_intro: draft.shop_intro.trim(),
+      shop_text: draft.shop_text.trim(),
+      last_day: draft.last_day || null,
+      sales_goal: cleanGoal(draft.sales_goal),
+      time_zone: browserTimeZone(),
+      setup_done: true,
+    };
+    const { error } = await sb.from('settings').update(patch).eq('id', 1);
+    setSaving(false);
+    if (error) {
+      console.warn('[møbel] first steps:', error.message);
+      return pushToast(t('Could not save, try again.', 'Enregistrement impossible, réessaie.'));
+    }
+    setSettings((s) => ({ ...s, ...patch }));
+    pushToast(t('Your shop is ready. Add your first listing!', 'Ta boutique est prête. Ajoute ta première annonce !'));
+  };
+
+  const last = step === steps.length - 1;
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-xl mx-auto px-4 sm:px-5 py-8 sm:py-12">
+        <p className="text-sm font-semibold text-blue-700">
+          {t('First steps', 'Premiers pas')} · {step + 1}/{steps.length}
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-1.5" aria-hidden="true">
+          {steps.map((_, i) => <span key={i} className={`h-1.5 rounded-full ${i <= step ? 'bg-blue-700' : 'bg-blue-100'}`} />)}
+        </div>
+        <h1 className="display font-bold text-2xl sm:text-3xl mt-5">{steps[step].title}</h1>
+        <p className="mt-1 text-slate-600 leading-relaxed">{steps[step].intro}</p>
+
+        <div className="mt-6 bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+          {step === 0 && (
+            <div className="space-y-8">
+              <section>
+                <h2 className="font-semibold">{t('Your language', 'Ta langue')}</h2>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  {t('For these screens, only you see them.', 'Pour ces écrans, toi seul les vois.')}
+                </p>
+                <LangPicker value={adminLang} onPick={onAdminLang} label={t('Your language', 'Ta langue')} />
+              </section>
+              <section>
+                <h2 className="font-semibold">{t('Your shop’s language', 'La langue de ta boutique')}</h2>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  {t('What buyers read: listings, booking, messages and the poster. Descriptions are written in it too.',
+                     'Ce que lisent les acheteurs : annonces, réservation, messages et affiche. Les descriptions s’écrivent aussi dans cette langue.')}
+                </p>
+                <LangPicker value={draft.shop_lang} onPick={(lang) => change({ shop_lang: lang })}
+                            label={t('Your shop’s language', 'La langue de ta boutique')} />
+              </section>
+            </div>
+          )}
+          {step === 1 && <SaleFields value={draft} onChange={change} />}
+          {step === 2 && (
+            <div className="space-y-6">
+              <ShopWordsFields value={draft} onChange={change} />
+              <SaleLimitsFields value={draft} onChange={change} />
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 flex items-center justify-between gap-3">
+          {step > 0 ? (
+            <button onClick={() => setStep(step - 1)} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 px-2 py-2">
+              <Icon name="left" className="w-4 h-4" /> {t('Back', 'Retour')}
+            </button>
+          ) : <span />}
+          <button onClick={last ? finish : () => setStep(step + 1)} disabled={saving || (step === 1 && !draft.currency)}
+                  className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-xl px-6 py-3 inline-flex items-center gap-2">
+            {last ? (saving ? t('Saving…', 'Enregistrement…') : t('Open my shop', 'Ouvrir ma boutique'))
+                  : <>{t('Next', 'Suivant')} <Icon name="right" className="w-4 h-4" /></>}
+          </button>
+        </div>
+        <p className="mt-4 text-xs text-slate-500">{t('You can change all of this later in Settings.', 'Tout reste modifiable ensuite dans Réglages.')}</p>
+      </div>
     </div>
   );
 }
@@ -4001,9 +4571,9 @@ function describeItemEn(item, d) {
   if (paid > 0) {
     const off = asking > 0 && asking < paid ? Math.round((1 - asking / paid) * 100) : 0;
     sentences.push(off >= 10
-      ? say([`I paid ${fmtKr(paid)} for it new, so you save ${off}%.`,
-             `It cost ${fmtKr(paid)} new: you pay ${off}% less.`], 'paid')
-      : say([`It cost ${fmtKr(paid)} new.`, `I paid ${fmtKr(paid)} for it new.`], 'paid'));
+      ? say([`I paid ${formatMoney(paid)} for it new, so you save ${off}%.`,
+             `It cost ${formatMoney(paid)} new: you pay ${off}% less.`], 'paid')
+      : say([`It cost ${formatMoney(paid)} new.`, `I paid ${formatMoney(paid)} for it new.`], 'paid'));
   }
 
   const condition = CONDITIONS.find((c) => c.en === item.condition);
@@ -4090,9 +4660,9 @@ function describeItemFr(item, d) {
   if (paid > 0) {
     const off = asking > 0 && asking < paid ? Math.round((1 - asking / paid) * 100) : 0;
     sentences.push(off >= 10
-      ? say([`Prix neuf : ${fmtKr(paid)}, vous économisez ${off} %.`,
-             `${cap(il)} coûtait ${fmtKr(paid)} ${g('neuf', 'neuve')} : vous payez ${off} % de moins.`], 'paid')
-      : say([`Prix neuf : ${fmtKr(paid)}.`, `Je l’ai ${g('payé', 'payée')} ${fmtKr(paid)} ${g('neuf', 'neuve')}.`], 'paid'));
+      ? say([`Prix neuf : ${formatMoney(paid)}, vous économisez ${off} %.`,
+             `${cap(il)} coûtait ${formatMoney(paid)} ${g('neuf', 'neuve')} : vous payez ${off} % de moins.`], 'paid')
+      : say([`Prix neuf : ${formatMoney(paid)}.`, `Je l’ai ${g('payé', 'payée')} ${formatMoney(paid)} ${g('neuf', 'neuve')}.`], 'paid'));
   }
 
   const condition = CONDITIONS.find((c) => c.en === item.condition);
@@ -4121,7 +4691,7 @@ const emptyForm = {
   available_from: '', available_to: '', custom_schedule: false, weekdays: null, slots: null,
 };
 
-/* --------------------- objectif de vente (3000 kr) ------------------ */
+/* ------------------------ sales goal (optional) --------------------- */
 
 function GoalProgress({ items }) {
   const t = useT();
@@ -4135,9 +4705,13 @@ function GoalProgress({ items }) {
   const listedTotal = sum(leftQty);
   // Écart avec les prix affichés des meubles vendus : négatif = remises.
   const haggled = soldTotal - sum(soldQty);
-  const missing = Math.max(0, SALES_GOAL - soldTotal);
-  const pct = (n) => Math.min(100, (n / SALES_GOAL) * 100);
-  const reached = soldTotal >= SALES_GOAL;
+  // No goal set (settings.sales_goal): the bars compare with everything
+  // listed, sold or not.
+  const goal = SHOP.goal > 0 ? SHOP.goal : 0;
+  const scale = goal || soldTotal + listedTotal || 1;
+  const missing = Math.max(0, goal - soldTotal);
+  const pct = (n) => Math.min(100, (n / scale) * 100);
+  const reached = goal > 0 && soldTotal >= goal;
 
   const bar = (label, count, total, fill, track, note) => (
     <div>
@@ -4145,7 +4719,7 @@ function GoalProgress({ items }) {
         <span className="text-sm text-slate-600">
           {label} <span className="text-slate-400">· {count} {t(`item${count > 1 ? 's' : ''}`, `meuble${count > 1 ? 's' : ''}`)}</span>
         </span>
-        <span className="text-sm font-semibold tabular-nums">{fmtKr(total)}</span>
+        <span className="text-sm font-semibold tabular-nums">{formatMoney(total)}</span>
       </div>
       <div className={`h-3 rounded-full overflow-hidden ${track}`}>
         <div className={`h-full rounded-full ${fill} transition-all duration-500`}
@@ -4158,23 +4732,31 @@ function GoalProgress({ items }) {
   return (
     <section className="border border-blue-200 rounded-xl bg-blue-50 px-5 py-5 mb-8">
       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-5">
-        <h2 className="display font-bold text-lg">{t('Goal:', 'Objectif :')} {fmtKr(SALES_GOAL)}</h2>
-        <span className={`text-sm font-semibold ${reached ? 'text-green-700' : 'text-blue-800'}`}>
-          {reached ? t('Goal reached 🎉', 'Objectif atteint 🎉') : t(`${fmtKr(missing)} to go`, `Il manque ${fmtKr(missing)}`)}
-        </span>
+        <h2 className="display font-bold text-lg">
+          {goal ? <>{t('Goal:', 'Objectif :')} {formatMoney(goal)}</> : t('Your sale', 'Ta vente')}
+        </h2>
+        {goal > 0 && (
+          <span className={`text-sm font-semibold ${reached ? 'text-green-700' : 'text-blue-800'}`}>
+            {reached ? t('Goal reached 🎉', 'Objectif atteint 🎉') : t(`${formatMoney(missing)} to go`, `Il manque ${formatMoney(missing)}`)}
+          </span>
+        )}
       </div>
 
       <div className="space-y-5">
         {bar(t('Sold', 'Vendu'), soldCount, soldTotal, 'bg-blue-700', 'bg-blue-100',
-          `${t(`${Math.round(pct(soldTotal))}% of the goal`, `${Math.round(pct(soldTotal))} % de l’objectif`)}${Math.round(haggled)
-            ? ` · ${haggled < 0 ? '−' : '+'}${fmtKr(Math.abs(haggled))} ${t('compared with listed prices (haggling)', 'par rapport aux prix affichés (négociations)')}`
+          `${goal ? t(`${Math.round(pct(soldTotal))}% of the goal`, `${Math.round(pct(soldTotal))} % de l’objectif`)
+                  : t(`${Math.round(pct(soldTotal))}% of everything listed`, `${Math.round(pct(soldTotal))} % de tout ce qui est en vente`)}${Math.round(haggled)
+            ? ` · ${haggled < 0 ? '−' : '+'}${formatMoney(Math.abs(haggled))} ${t('compared with listed prices (haggling)', 'par rapport aux prix affichés (négociations)')}`
             : ''}`)}
         {bar(t('For sale', 'En vente'), listedCount, listedTotal, 'bg-blue-400', 'bg-blue-100',
-          listedTotal + soldTotal >= SALES_GOAL
-            ? t(`Selling everything would bring ${fmtKr(soldTotal + listedTotal)}, the goal is within reach.`,
-                `Tout vendre rapporterait ${fmtKr(soldTotal + listedTotal)}, l’objectif est atteignable.`)
-            : t(`Even selling everything (${fmtKr(soldTotal + listedTotal)}), you would still be ${fmtKr(SALES_GOAL - soldTotal - listedTotal)} short.`,
-                `Même en vendant tout (${fmtKr(soldTotal + listedTotal)}), il manquerait ${fmtKr(SALES_GOAL - soldTotal - listedTotal)}.`))}
+          !goal
+            ? t(`Selling everything would bring ${formatMoney(soldTotal + listedTotal)} in all. Set a goal in Settings if you have one.`,
+                `Tout vendre rapporterait ${formatMoney(soldTotal + listedTotal)} en tout. Fixe un objectif dans Réglages si tu en as un.`)
+            : listedTotal + soldTotal >= goal
+            ? t(`Selling everything would bring ${formatMoney(soldTotal + listedTotal)}, the goal is within reach.`,
+                `Tout vendre rapporterait ${formatMoney(soldTotal + listedTotal)}, l’objectif est atteignable.`)
+            : t(`Even selling everything (${formatMoney(soldTotal + listedTotal)}), you would still be ${formatMoney(goal - soldTotal - listedTotal)} short.`,
+                `Même en vendant tout (${formatMoney(soldTotal + listedTotal)}), il manquerait ${formatMoney(goal - soldTotal - listedTotal)}.`))}
       </div>
     </section>
   );
@@ -4248,9 +4830,9 @@ function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
       <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} className="hidden" />
       {!manyPhotos && photos.length > 1 && (
         <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          {t(<>Only the cover will be saved until <code>migration-photos.sql</code> has been
+          {t(<>Only the cover will be saved until <code>install.sql</code> has been
                run in Supabase (SQL Editor) and the page refreshed.</>,
-             <>Seule la couverture sera enregistrée tant que <code>migration-photos.sql</code> n’a pas été
+             <>Seule la couverture sera enregistrée tant que <code>install.sql</code> n’a pas été
                lancé dans Supabase (SQL Editor), puis la page actualisée.</>)}
         </p>
       )}
@@ -4268,13 +4850,13 @@ function PhotosEditor({ photos, onChange, state, manyPhotos, pushToast }) {
 // `prices` : prix en kr de ceux qui viennent de partir, un par exemplaire
 // (le prix affiché pour ceux qui manquent). Tout vendu : l'annonce quitte
 // la boutique. null si un prix négocié ne peut pas être gardé, faute
-// d'avoir lancé migration-prix-vente.sql. `unreserve` : combien de ceux qui
+// d'avoir lancé install.sql. `unreserve` : combien de ceux qui
 // partent étaient réservés hors boutique (« Vendu » sous la réservation).
 function soldPatch(item, n, prices = [], unreserve = 0) {
   const total = totalQty(item);
   const sold_qty = Math.max(0, Math.min(total, n));
   const status = sold_qty >= total ? 'sold' : 'available';
-  // Sans migration-quantite.sql, seul le statut existe.
+  // Sans install.sql, seul le statut existe.
   const patch = 'sold_qty' in item ? { status, sold_qty } : { status };
   // Des exemplaires en plus : leurs prix s'ajoutent ; en moins : les
   // derniers prix notés s'en vont.
@@ -4286,7 +4868,7 @@ function soldPatch(item, n, prices = [], unreserve = 0) {
       ? [...noted, ...Array.from({ length: added }, (_, i) => (i < prices.length ? prices[i] : listed))]
       : noted.slice(0, sold_qty);
   } else if (prices.some((p) => p !== listed)) return null;
-  // Jamais plus d'exemplaires réservés qu'il n'en reste (migration-lots.sql).
+  // Jamais plus d'exemplaires réservés qu'il n'en reste (install.sql).
   if ('reserved_qty' in item) {
     patch.reserved_qty = Math.max(0, Math.min(total - sold_qty, reservedQty(item) - unreserve));
   }
@@ -4329,10 +4911,10 @@ function SalePrompt({ item, count = 1, discount = 0, onConfirm, onCancel }) {
         <input type="radio" checked={!other} onChange={() => setOther(false)} className="w-4 h-4 accent-blue-700" />
         <span>
           {pct > 0 ? t('At the bundle price:', 'Au prix du lot :') : t('At the listed price:', 'Au prix affiché :')}{' '}
-          <strong>{detailed ? fmtKr(listed) : withKr(item.price) || t('free', 'gratuit')}</strong>
+          <strong>{detailed ? formatMoney(listed) : priceText(item.price) || t('free', 'gratuit')}</strong>
           {detailed && (
             <span className="text-slate-500">
-              {' '}({count > 1 ? `${count} × ` : ''}{withKr(item.price)}{pct > 0 ? `, ${pctText(pct, t.lang)}` : ''})
+              {' '}({count > 1 ? `${count} × ` : ''}{priceText(item.price)}{pct > 0 ? `, ${pctText(pct, t.lang)}` : ''})
             </span>
           )}
         </span>
@@ -4350,13 +4932,13 @@ function SalePrompt({ item, count = 1, discount = 0, onConfirm, onCancel }) {
                  inputMode="decimal" placeholder={listed ? String(Math.round(listed)) : '0'}
                  aria-label={t('Haggled sale price', 'Prix de vente négocié')}
                  className="w-20 rounded-lg px-2 py-1.5 bg-transparent outline-none" />
-          <span className="pr-2 text-slate-500">kr</span>
+          <span className="pr-2 text-slate-500 whitespace-nowrap">{currencySymbol()}</span>
         </span>
       </div>
       {!canHaggle && (
         <p className="mt-1 text-xs text-slate-500">
-          {t(<>To note another price, first run <code className="bg-white px-1 rounded">migration-prix-vente.sql</code> in Supabase.</>,
-             <>Pour noter un autre prix, lance d’abord <code className="bg-white px-1 rounded">migration-prix-vente.sql</code> dans Supabase.</>)}
+          {t(<>To note another price, first run <code className="bg-white px-1 rounded">install.sql</code> in Supabase.</>,
+             <>Pour noter un autre prix, lance d’abord <code className="bg-white px-1 rounded">install.sql</code> dans Supabase.</>)}
         </p>
       )}
       <div className="mt-3 flex gap-2">
@@ -4466,8 +5048,8 @@ function soldNote(item, t) {
   const got = soldAmount(item);
   const listed = priceValue(item.price) * n;
   if (!got && !listed) return n > 1 ? t(`${n} given away`, `${n} donnés`) : t('given away', 'donné');
-  const diff = Math.round(got) !== Math.round(listed) ? ` (${t('listed', 'affiché')} ${fmtKr(listed)})` : '';
-  return `${n > 1 ? t(`${n} sold`, `${n} vendus`) : t('sold', 'vendu')} ${fmtKr(got)}${diff}`;
+  const diff = Math.round(got) !== Math.round(listed) ? ` (${t('listed', 'affiché')} ${formatMoney(listed)})` : '';
+  return `${n > 1 ? t(`${n} sold`, `${n} vendus`) : t('sold', 'vendu')} ${formatMoney(got)}${diff}`;
 }
 
 // Sous un rendez-vous vendu : « Vendu 400 kr (affiché 450 kr) ».
@@ -4479,7 +5061,7 @@ function saleNote(b, item, t) {
   const listed = item ? afterDiscount(priceValue(item.price) * (b.quantity || 1), pct) : got;
   if (!got && !listed) return t('Given away', 'Donné');
   const ref = pct > 0 ? t('bundle price', 'prix du lot') : t('listed', 'affiché');
-  return `${t('Sold', 'Vendu')} ${fmtKr(got)}${Math.round(got) !== Math.round(listed) ? ` (${ref} ${fmtKr(listed)})` : ''}`;
+  return `${t('Sold', 'Vendu')} ${formatMoney(got)}${Math.round(got) !== Math.round(listed) ? ` (${ref} ${formatMoney(listed)})` : ''}`;
 }
 
 // Exemplaires d'un meuble retenus par un rendez-vous de la boutique pas
@@ -4529,10 +5111,10 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
   const photoRequest = useRef(0);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Le champ prix se tape sans « kr », il est rajouté à l'enregistrement.
+  // The price field holds just the number; the currency is added on display.
   const openForm = (item) => {
     const f = { ...emptyForm, ...item, links: item.links || [] };
-    setForm({ ...f, price: withKr(f.price).replace(/ kr$/, ''), photos: f.image ? [f.image] : [] });
+    setForm({ ...f, price: cleanPriceInput(f.price), photos: f.image ? [f.image] : [] });
     setDetails({ ...emptyDetails, version: newVersion(), ...(item.details || {}) });
     setBeforeRewrite(null);
     setOpen(true);
@@ -4598,7 +5180,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
     const [cover, ...extras] = form.photos;
     const payload = {
       title: form.title.trim(),
-      price: withKr(form.price),
+      price: cleanPriceInput(form.price),
       condition: form.condition.trim(),
       description: form.description.trim(),
       links: (form.links || []).filter((l) => l.label.trim() && l.url.trim()),
@@ -4610,10 +5192,10 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
       weekdays: form.custom_schedule ? (form.weekdays || DEFAULT_SETTINGS.weekdays) : null,
       slots: form.custom_schedule ? (form.slots || DEFAULT_SETTINGS.slots) : null,
     };
-    // Avant migration-quantite.sql ces colonnes n'existent pas : on ne les
+    // Avant install.sql ces colonnes n'existent pas : on ne les
     // envoie que si la base les a déjà, ou s'il y a plusieurs exemplaires.
     if (quantity > 1 || items.some((i) => 'quantity' in i)) Object.assign(payload, { quantity, sold_qty });
-    // La colonne details arrive avec migration-photos.sql, comme item_photos.
+    // La colonne details arrive avec install.sql, comme item_photos.
     if (manyPhotos) payload.details = details;
     let res;
     if (form.id) res = await sb.from('items').update(payload).eq('id', form.id).select().single();
@@ -4621,8 +5203,8 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
     // PGRST204 = colonne inconnue de la base.
     if (res.error && res.error.code === 'PGRST204') {
       setBusy(false);
-      return pushToast(t('To sell several of the same item, first run migration-quantite.sql in Supabase (SQL Editor).',
-                         'Pour vendre plusieurs exemplaires, lance d’abord migration-quantite.sql dans Supabase (SQL Editor).'));
+      return pushToast(t('To sell several of the same item, first run install.sql in Supabase (SQL Editor).',
+                         'Pour vendre plusieurs exemplaires, lance d’abord install.sql dans Supabase (SQL Editor).'));
     }
     if (res.error) {
       setBusy(false);
@@ -4650,8 +5232,8 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
     setBusy(false);
     closeForm();
     pushToast(extras.length && !manyPhotos
-      ? t('Listing saved with the cover only: run migration-photos.sql to keep several photos.',
-          'Annonce enregistrée avec la couverture seulement : lance migration-photos.sql pour garder plusieurs photos.')
+      ? t('Listing saved with the cover only: run install.sql to keep several photos.',
+          'Annonce enregistrée avec la couverture seulement : lance install.sql pour garder plusieurs photos.')
       : form.id ? t('Listing updated.', 'Annonce mise à jour.') : t('Listing published.', 'Annonce publiée.'));
   };
 
@@ -4679,8 +5261,8 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
     const haggled = salePrice != null && salePrice !== listed;
     const patch = soldPatch(item, sold_qty, haggled ? [salePrice] : [], unreserve);
     if (!patch) {
-      pushToast(t('To note a haggled price, first run migration-prix-vente.sql in Supabase (SQL Editor).',
-                  'Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).'));
+      pushToast(t('To note a haggled price, first run install.sql in Supabase (SQL Editor).',
+                  'Pour noter un prix négocié, lance d’abord install.sql dans Supabase (SQL Editor).'));
       return false;
     }
     const { status } = patch;
@@ -4690,7 +5272,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
       return false;
     }
     setItems(items.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
-    const at = haggled ? t(` for ${fmtKr(salePrice)} (listed ${fmtKr(listed)})`, ` à ${fmtKr(salePrice)} (affiché ${fmtKr(listed)})`) : '';
+    const at = haggled ? t(` for ${formatMoney(salePrice)} (listed ${formatMoney(listed)})`, ` à ${formatMoney(salePrice)} (affiché ${formatMoney(listed)})`) : '';
     const left = t(`${total - sold_qty} of ${total} left in the shop.`, `Il en reste ${total - sold_qty} sur ${total} dans la boutique.`);
     if (status === 'sold') pushToast(t(`Sold${at}: removed from the shop.`, `Vendu${at} : retiré de la boutique.`));
     else if (sold_qty > soldQty(item)) pushToast(`${t('Sold', 'Vendu')}${at}. ${left}`);
@@ -4704,8 +5286,8 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
   // « Vendu » ou « Annuler la réservation ». Renvoie true si c'est enregistré.
   const setReserved = async (item, n) => {
     if (!('reserved_qty' in item)) {
-      pushToast(t('To mark an item as reserved, first run migration-lots.sql in Supabase (SQL Editor).',
-                  'Pour marquer un meuble réservé, lance d’abord migration-lots.sql dans Supabase (SQL Editor).'));
+      pushToast(t('To mark an item as reserved, first run install.sql in Supabase (SQL Editor).',
+                  'Pour marquer un meuble réservé, lance d’abord install.sql dans Supabase (SQL Editor).'));
       return false;
     }
     const total = totalQty(item);
@@ -4801,7 +5383,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
               <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
                 <input value={form.price} onChange={(e) => change({ ...form, price: e.target.value }, details)} inputMode="decimal"
                        className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="450" />
-                <span className="pr-3 text-slate-500">kr</span>
+                <span className="pr-3 text-slate-500 whitespace-nowrap">{currencySymbol()}</span>
               </span>
             </label>
             <label className="block">
@@ -4885,7 +5467,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
                 <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
                   <input value={details.paid} onChange={(e) => setDetail('paid', e.target.value)} inputMode="decimal"
                          className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="1200" />
-                  <span className="pr-3 text-slate-500 text-sm">kr</span>
+                  <span className="pr-3 text-slate-500 text-sm whitespace-nowrap">{currencySymbol()}</span>
                 </span>
               </label>
             </div>
@@ -4962,14 +5544,14 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
                 <span className="text-sm text-slate-600">{t('Visible from', 'Visible à partir du')}</span>
                 <input type="date" value={form.available_from || ''}
                        onChange={(e) => set('available_from', e.target.value)}
-                       max={LAST_DAY}
+                       max={lastDay()}
                        className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
               </label>
               <label className="block">
                 <span className="text-sm text-slate-600">{t('Last possible day', 'Dernier jour possible')}</span>
                 <input type="date" value={form.available_to || ''}
                        onChange={(e) => set('available_to', e.target.value)}
-                       max={LAST_DAY}
+                       max={lastDay()}
                        className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 bg-white" />
               </label>
             </div>
@@ -5069,7 +5651,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`font-semibold ${item.status === 'sold' ? 'text-slate-400 line-through' : ''}`}>{item.title}</span>
-                    <span className="text-blue-700 text-sm">{withKr(item.price)}</span>
+                    <span className="text-blue-700 text-sm">{priceText(item.price)}</span>
                     {item.status === 'sold' && <span className="text-xs bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">{t('Sold', 'Vendu')}</span>}
                     {item.status !== 'sold' && reservedQty(item) > 0 && (
                       <span className="text-xs bg-amber-100 text-amber-900 rounded-full px-2 py-0.5">
@@ -5190,7 +5772,7 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
 }
 
 // Onglet Lots : plusieurs meubles déjà en vente, vendus ensemble avec une
-// remise (migration-lots.sql). Dans la boutique, un lot s'affiche en cartes
+// remise (install.sql). Dans la boutique, un lot s'affiche en cartes
 // empilées au-dessus des meubles ; chacun d'eux reste aussi en vente seul.
 const DISCOUNT_CHOICES = [0, 10, 15, 20, 25, 30];
 
@@ -5280,9 +5862,9 @@ function BundlesPanel({ items, bookings, bundles, setBundles, missing, pushToast
       <div className="border border-dashed border-amber-300 bg-amber-50 rounded-xl px-6 py-10 text-center text-amber-900">
         <p className="font-semibold">{t('Bundles are not turned on yet.', 'Les lots ne sont pas encore activés.')}</p>
         <p className="mt-1 text-sm leading-relaxed">
-          {t(<>Run <code className="bg-white px-1.5 py-0.5 rounded">migration-lots.sql</code> once in Supabase
+          {t(<>Run <code className="bg-white px-1.5 py-0.5 rounded">install.sql</code> once in Supabase
                (SQL Editor → New query → Run), then refresh the page.</>,
-             <>Lance <code className="bg-white px-1.5 py-0.5 rounded">migration-lots.sql</code> une fois dans Supabase
+             <>Lance <code className="bg-white px-1.5 py-0.5 rounded">install.sql</code> une fois dans Supabase
                (SQL Editor → New query → Run), puis actualise la page.</>)}
         </p>
       </div>
@@ -5333,7 +5915,7 @@ function BundlesPanel({ items, bookings, bundles, setBundles, missing, pushToast
                     <span className="min-w-0 flex-1">
                       <span className="block font-medium truncate">{item.title}</span>
                       <span className="block text-xs text-slate-500">
-                        {withKr(item.price) || t('free', 'gratuit')}{totalQty(item) > 1 && priceValue(item.price) > 0 ? t(' each', ' l’unité') : ''}
+                        {priceText(item.price) || t('free', 'gratuit')}{totalQty(item) > 1 && priceValue(item.price) > 0 ? t(' each', ' l’unité') : ''}
                       </span>
                       {note && <span className="block text-xs text-amber-700">{note}</span>}
                     </span>
@@ -5388,11 +5970,11 @@ function BundlesPanel({ items, bookings, bundles, setBundles, missing, pushToast
 
         {lines.length > 0 && full > 0 && (
           <p className="mt-4 text-sm text-slate-700">
-            {t('Separately', 'Séparément')} {pct > 0 ? <s className="text-slate-400">{fmtKr(full)}</s> : fmtKr(full)}
+            {t('Separately', 'Séparément')} {pct > 0 ? <s className="text-slate-400">{formatMoney(full)}</s> : formatMoney(full)}
             {pct > 0 && (
               <>
-                {' → '}<strong className="text-blue-800 text-base">{fmtKr(price)}</strong>
-                {' '}{t(`for the bundle, the buyer saves ${fmtKr(saved)}`, `pour le lot, l’acheteur économise ${fmtKr(saved)}`)}
+                {' → '}<strong className="text-blue-800 text-base">{formatMoney(price)}</strong>
+                {' '}{t(`for the bundle, the buyer saves ${formatMoney(saved)}`, `pour le lot, l’acheteur économise ${formatMoney(saved)}`)}
               </>
             )}
           </p>
@@ -5469,8 +6051,8 @@ function BundlesPanel({ items, bookings, bundles, setBundles, missing, pushToast
                     )}
                   </div>
                   <p className="text-sm mt-0.5">
-                    <span className="text-blue-700 font-semibold">{full > 0 ? fmtKr(price) : t('Free', 'Gratuit')}</span>
-                    {pct > 0 && full > 0 && <s className="ml-2 text-slate-400">{fmtKr(full)}</s>}
+                    <span className="text-blue-700 font-semibold">{full > 0 ? formatMoney(price) : t('Free', 'Gratuit')}</span>
+                    {pct > 0 && full > 0 && <s className="ml-2 text-slate-400">{formatMoney(full)}</s>}
                     <span className="text-slate-500"> · {lines.map((l) => `${l.count > 1 ? `${l.count} × ` : ''}${l.item.title}`).join(', ')}</span>
                   </p>
                   <p className={`text-xs mt-1 ${shown ? 'text-green-700' : 'text-amber-700'}`}>
@@ -5522,11 +6104,11 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   // déjà été marqués vendus dans Annonces, pour ne pas les compter deux fois.
   const sellable = (b, item) => (item ? Math.min(b.quantity || 1, leftQty(item)) : 0);
 
-  // Ce que le vendeur note après le rendez-vous (migration-reservation.sql).
+  // Ce que le vendeur note après le rendez-vous (install.sql).
   const close = async (b, patch) => {
     if (!('outcome' in b)) {
-      pushToast(t('To note sold or unsold, first run migration-reservation.sql in Supabase (SQL Editor).',
-                  'Pour noter vendu ou invendu, lance d’abord migration-reservation.sql dans Supabase (SQL Editor).'));
+      pushToast(t('To note sold or unsold, first run install.sql in Supabase (SQL Editor).',
+                  'Pour noter vendu ou invendu, lance d’abord install.sql dans Supabase (SQL Editor).'));
       return false;
     }
     const { error } = await sb.from('bookings').update(patch).eq('id', b.id);
@@ -5544,8 +6126,8 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   const sold = async (b, item, n, total) => {
     const patch = n > 0 ? soldPatch(item, soldQty(item) + n, Array(n).fill(total / n)) : null;
     if (n > 0 && !patch) {
-      pushToast(t('To note a haggled price, first run migration-prix-vente.sql in Supabase (SQL Editor).',
-                  'Pour noter un prix négocié, lance d’abord migration-prix-vente.sql dans Supabase (SQL Editor).'));
+      pushToast(t('To note a haggled price, first run install.sql in Supabase (SQL Editor).',
+                  'Pour noter un prix négocié, lance d’abord install.sql dans Supabase (SQL Editor).'));
       return false;
     }
     // Le rendez-vous d'abord : si sa colonne manque, rien n'a bougé.
@@ -5561,7 +6143,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
       }
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...patch } : i)));
     }
-    pushToast(total ? t(`Sale noted: ${fmtKr(total)}.`, `Vente notée : ${fmtKr(total)}.`) : t('Sale noted.', 'Vente notée.'));
+    pushToast(total ? t(`Sale noted: ${formatMoney(total)}.`, `Vente notée : ${formatMoney(total)}.`) : t('Sale noted.', 'Vente notée.'));
     return true;
   };
 
@@ -5720,7 +6302,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
               const it = itemOf(r);
               return sum + (it ? priceValue(it.price) * (r.quantity || 1) : 0);
             }, 0);
-            // Pris pour un lot (migration-lots.sql) : son titre et sa remise.
+            // Pris pour un lot (install.sql) : son titre et sa remise.
             const lot = rows.find((r) => r.bundle_title);
             const pct = lot ? cleanDiscount(lot.bundle_discount) : 0;
             return (
@@ -5765,14 +6347,14 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
                         <>
                           {t('For the bundle', 'Pour le lot')} <strong className="text-slate-800">{t(`“${lot.bundle_title}”`, `« ${lot.bundle_title} »`)}</strong>
                           {listed > 0 && (pct > 0
-                            ? ` · ${fmtKr(afterDiscount(listed, pct))} ${t(`instead of ${fmtKr(listed)}`, `au lieu de ${fmtKr(listed)}`)}`
-                            : ` · ${fmtKr(listed)}`)}
+                            ? ` · ${formatMoney(afterDiscount(listed, pct))} ${t(`instead of ${formatMoney(listed)}`, `au lieu de ${formatMoney(listed)}`)}`
+                            : ` · ${formatMoney(listed)}`)}
                         </>
                       ) : many ? (
                         <>
                           {t('For:', 'Pour :')} <strong className="text-slate-800">{t(`${rows.length} items`, `${rows.length} meubles`)}</strong>
                           {' '}{t('at the same viewing', 'au même rendez-vous')}
-                          {listed > 0 && ` · ${fmtKr(listed)} ${t('at listed prices', 'au prix affiché')}`}
+                          {listed > 0 && ` · ${formatMoney(listed)} ${t('at listed prices', 'au prix affiché')}`}
                         </>
                       ) : (
                         <>{t('For:', 'Pour :')} {b.quantity > 1 && <strong className="text-slate-800">{b.quantity} × </strong>}{b.item_title}</>
@@ -5809,7 +6391,7 @@ function BookingsPanel({ bookings, setBookings, items, setItems, pushToast }) {
   );
 }
 
-// Les demandes de contact laissées dans la boutique (migration-panier.sql) :
+// Les demandes de contact laissées dans la boutique (install.sql) :
 // rappeler l'acheteur, puis marquer « traité ».
 function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
   const t = useT();
@@ -5842,9 +6424,9 @@ function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
       <div className="border border-dashed border-amber-300 bg-amber-50 rounded-xl px-6 py-10 text-center text-amber-900">
         <p className="font-semibold">{t('Messages are not turned on yet.', 'Les messages ne sont pas encore activés.')}</p>
         <p className="mt-1 text-sm leading-relaxed">
-          {t(<>Run <code className="bg-white px-1.5 py-0.5 rounded">migration-panier.sql</code> once in Supabase
+          {t(<>Run <code className="bg-white px-1.5 py-0.5 rounded">install.sql</code> once in Supabase
                (SQL Editor → New query → Run), then refresh the page.</>,
-             <>Lance <code className="bg-white px-1.5 py-0.5 rounded">migration-panier.sql</code> une fois dans Supabase
+             <>Lance <code className="bg-white px-1.5 py-0.5 rounded">install.sql</code> une fois dans Supabase
                (SQL Editor → New query → Run), puis actualise la page.</>)}
         </p>
       </div>
@@ -5954,7 +6536,7 @@ function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
                     {t('Bundle', 'Lot')} {t(`“${lot.bundle}”`, `« ${lot.bundle} »`)}
                     {lotFull > 0 && (
                       <span className="font-normal text-slate-500">
-                        · {fmtKr(afterDiscount(lotFull, lotPct))}{lotPct > 0 ? ` (${pctText(lotPct, t.lang)}, ${t('instead of', 'au lieu de')} ${fmtKr(lotFull)})` : ''}
+                        · {formatMoney(afterDiscount(lotFull, lotPct))}{lotPct > 0 ? ` (${pctText(lotPct, t.lang)}, ${t('instead of', 'au lieu de')} ${formatMoney(lotFull)})` : ''}
                       </span>
                     )}
                   </p>
@@ -5967,7 +6549,7 @@ function MessagesPanel({ messages, setMessages, missing, items, pushToast }) {
                         <span>
                           {l.quantity > 1 && <strong className="text-slate-800">{l.quantity} × </strong>}
                           {l.title}
-                          <span className="text-slate-400"> · {l.quantity > 1 && priceValue(l.price) > 0 ? fmtKr(priceValue(l.price) * l.quantity) : withKr(l.price) || t('free', 'gratuit')}{now(l)}</span>
+                          <span className="text-slate-400"> · {l.quantity > 1 && priceValue(l.price) > 0 ? formatMoney(priceValue(l.price) * l.quantity) : priceText(l.price) || t('free', 'gratuit')}{now(l)}</span>
                         </span>
                       </li>
                     ))}
@@ -6008,6 +6590,7 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
   const blocked = new Set(draft.blocked || []);
   const cells = monthDays(cursor.y, cursor.m);
   const tKey = todayKey();
+  const saleEnd = lastDay();
 
   const toggleClosed = (k) => set('blocked', blocked.has(k) ? draft.blocked.filter((x) => x !== k) : [...draft.blocked, k]);
 
@@ -6030,6 +6613,10 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
       <div className="border border-blue-100 bg-blue-50 rounded-xl px-4 py-3 text-sm text-blue-900">
         {t('This schedule applies to all items by default. An item can have its own dates and times from the Listings tab.',
            'Ce planning s’applique par défaut à tous les meubles. Un meuble peut avoir ses propres dates et horaires depuis l’onglet Annonces.')}
+        {' '}
+        {SHOP.lastDay
+          ? t(`Viewings until ${fmtDate(SHOP.lastDay, t.locale)} (Settings).`, `Visites jusqu’au ${fmtDate(SHOP.lastDay, t.locale)} (Réglages).`)
+          : t('No end date: you can set one in Settings.', 'Pas de date de fin : tu peux en fixer une dans Réglages.')}
       </div>
 
       <section>
@@ -6067,7 +6654,7 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
               {new Date(cursor.y, cursor.m, 1).toLocaleDateString(t.locale, { month: 'long', year: 'numeric' })}
             </span>
             <button onClick={() => setCursor(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }))}
-                    disabled={cursorKey(cursor) >= LAST_MONTH}
+                    disabled={cursorKey(cursor) >= lastMonth()}
                     className="p-1.5 rounded text-blue-700 enabled:hover:bg-blue-50 disabled:text-slate-200 disabled:cursor-not-allowed"
                     aria-label={t('Next month', 'Mois suivant')}>
               <Icon name="right" className="w-5 h-5" />
@@ -6080,12 +6667,12 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
             {cells.map((d, i) => {
               if (!d) return <div key={i} />;
               const k = toKey(d);
-              const past = k < tKey || k > LAST_DAY; // avant aujourd'hui ou après la fin de la vente
+              const past = k < tKey || k > saleEnd; // before today or after the end of the sale
               const off = blocked.has(k) || !draft.weekdays[(d.getDay() + 6) % 7];
               const hasRdv = busyDates.has(k);
               return (
                 <button key={i} disabled={past} onClick={() => toggleClosed(k)}
-                        title={k > LAST_DAY ? t('After the end of the sale', 'Après la fin de la vente')
+                        title={k > saleEnd ? t('After the end of the sale', 'Après la fin de la vente')
                                             : hasRdv ? t('A viewing is already booked that day', 'Un rendez-vous est déjà pris ce jour-là') : undefined}
                         className={`h-10 rounded-lg text-sm relative ${
                           past ? 'text-slate-200 cursor-not-allowed'
@@ -6110,16 +6697,16 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
           <label className="block">
             <span className="text-sm text-slate-600">{t('Address shown on the map', 'Adresse affichée sur la carte')}</span>
             <input value={draft.address || ''} onChange={(e) => set('address', e.target.value)}
-                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder="Alfavej 510, 13" />
+                   className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2" placeholder={t('e.g. 12 Station Road, flat 3', 'ex. 12 rue de la Gare, appt 3')} />
           </label>
           <label className="block">
             <span className="text-sm text-slate-600">
-              {shopLang === 'fr' ? t('Payment (shown in French)', 'Paiement (affiché en français)')
-                                 : t('Payment (shown in English)', 'Paiement (affiché en anglais)')}
+              {shopLang === 'fr' ? t('Payment line (shown in French, optional)', 'Ligne paiement (affichée en français, facultative)')
+                                 : t('Payment line (shown in English, optional)', 'Ligne paiement (affichée en anglais, facultative)')}
             </span>
             <input value={draft.payment || ''} onChange={(e) => set('payment', e.target.value)}
                    className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2"
-                   placeholder={shopLang === 'fr' ? 'Revolut ou espèces' : 'Revolut or cash'} />
+                   placeholder={paymentLine({ ...settings, payment: '' }, shopLang)} />
           </label>
         </div>
       </section>
@@ -6147,7 +6734,7 @@ function PlanningPanel({ settings, setSettings, bookings, pushToast }) {
 }
 
 /* ---------------------------- statistiques -------------------------- */
-// Totaux calculés dans la base par seller_stats() (migration-stats.sql) :
+// Totaux calculés dans la base par seller_stats() (install.sql) :
 // visites, scans estimés du QR code, d'où viennent les visiteurs, et pour
 // chaque meuble combien l'ont vu et combien s'y sont intéressés.
 
@@ -6173,7 +6760,7 @@ function StatTile({ label, value, note, small }) {
 function StatsPanel({ items, bookings }) {
   const t = useT();
   const [stats, setStats] = useState(null);
-  // 'missing' : migration-stats.sql pas lancé, 'failed' : base injoignable
+  // 'missing' : install.sql pas lancé, 'failed' : base injoignable
   const [problem, setProblem] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -6192,9 +6779,9 @@ function StatsPanel({ items, bookings }) {
       <div className="border border-dashed border-blue-200 rounded-xl px-6 py-10 text-center text-slate-600 max-w-xl mx-auto">
         <h2 className="display font-bold text-lg text-slate-900">{t('Stats are not turned on yet', 'Les statistiques ne sont pas encore activées')}</h2>
         <p className="mt-2 leading-relaxed">
-          {t(<>Run <code className="bg-blue-50 px-1 rounded">migration-stats.sql</code> once in Supabase
+          {t(<>Run <code className="bg-blue-50 px-1 rounded">install.sql</code> once in Supabase
                (SQL Editor → Run). Counting starts at that moment.</>,
-             <>Lance <code className="bg-blue-50 px-1 rounded">migration-stats.sql</code> une fois dans Supabase
+             <>Lance <code className="bg-blue-50 px-1 rounded">install.sql</code> une fois dans Supabase
                (SQL Editor → Run). Le compteur démarre à ce moment-là.</>)}
         </p>
         <button onClick={load} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline">
@@ -6346,8 +6933,9 @@ const POSTER_PAY_KEY = 'meubles-affiche-paiements';
 const POSTER_TWO_UP_KEY = 'meubles-affiche-deux-par-feuille';
 // Paiements en bas de l'affiche, dans la langue de la boutique comme le
 // reste de l'affiche. Tant qu'on n'a pas touché à la liste, elle suit la langue.
-const posterPayDefault = (lang) => (lang === 'fr' ? ['Revolut', 'Espèces'] : ['Revolut', 'Cash']);
-const posterPayPresets = (lang) => (lang === 'fr' ? ['Revolut', 'Espèces', 'MobilePay'] : ['Revolut', 'Cash', 'MobilePay']);
+// By default, the ways to pay offered at booking (Settings).
+const posterPayDefault = (settings, lang) => offeredPayments(settings).map((m) => m[lang] || m.en);
+const posterPayPresets = (settings, lang) => [...new Set([...posterPayDefault(settings, lang), paymentLabel('cash', lang)])];
 const A4_PX = { w: 793.7, h: 1122.5 }; // 210 × 297 mm à 96 px par pouce
 
 function readStored(key, fallback) {
@@ -6399,10 +6987,10 @@ function PosterText({ as: Tag, field, texts, onSave, className, children }) {
 
 // Liste des paiements de l'affiche : on retire, on ajoute un nom libre ou
 // on remet en un clic un des moyens habituels.
-function PosterPayEditor({ value, onChange }) {
+function PosterPayEditor({ value, onChange, settings }) {
   const t = useT();
   const shopLang = useShopLang();
-  const presets = posterPayPresets(shopLang);
+  const presets = posterPayPresets(settings, shopLang);
   const [draft, setDraft] = useState('');
   const has = (name) => value.some((p) => p.toLowerCase() === name.toLowerCase());
   const add = (label) => {
@@ -6466,7 +7054,7 @@ function PosterPanel({ items, settings }) {
   const [texts, setTexts] = useState(() => readStored(POSTER_TEXTS_KEY, {}));
   // null tant qu'on n'y a pas touché : la liste par défaut, dans la langue de la boutique.
   const [savedPays, setPays] = useState(() => readStored(POSTER_PAY_KEY, null));
-  const pays = savedPays || posterPayDefault(shopLang);
+  const pays = savedPays || posterPayDefault(settings, shopLang);
   const [twoUp, setTwoUp] = useState(() => readStored(POSTER_TWO_UP_KEY, false) === true);
   const [link, setLink] = useState(SITE_URL);
   const [frameWidth, setFrameWidth] = useState(A4_PX.w / 2);
@@ -6554,15 +7142,10 @@ function PosterPanel({ items, settings }) {
       <div className="pst-top" ref={main ? topRef : null}>
         <div className="pst-fit" ref={main ? fitRef : null} style={{ zoom: fit }}>
           <p className="pst-eyebrow">
-            <PosterText as="span" field="eyebrow" {...edit}>
-              {tp('My internship ends on 20 November', 'Mon stage se termine le 20 novembre')}
-            </PosterText>
+            <PosterText as="span" field="eyebrow" {...edit}>{shopIntro(settings, shopLang)}</PosterText>
           </p>
           <PosterText as="h1" field="title" className="pst-title" {...edit}>{tp('Everything\nmust go', 'Tout\ndoit partir')}</PosterText>
-          <PosterText as="p" field="lede" className="pst-lede" {...edit}>
-            {tp('I am leaving Odense on 20 November and my whole flat is for sale. Everything is in very good shape and the prices are low, because it all has to find a new home before I fly out.',
-                'Je quitte Odense le 20 novembre et tout mon appartement est à vendre. Tout est en très bon état et les prix sont bas : tout doit trouver un nouveau foyer avant mon départ.')}
-          </PosterText>
+          <PosterText as="p" field="lede" className="pst-lede" {...edit}>{shopText(settings, shopLang)}</PosterText>
 
           {onPoster.length > 0 && (
             <ul className={`pst-list ${density}`}>
@@ -6692,7 +7275,7 @@ function PosterPanel({ items, settings }) {
           )}
         </section>
 
-        <PosterPayEditor value={pays} onChange={savePays} />
+        <PosterPayEditor value={pays} onChange={savePays} settings={settings} />
 
         <label className="block">
           <span className="text-sm text-slate-600">{t('QR code link', 'Lien du QR code')}</span>
@@ -6789,7 +7372,7 @@ function PosterPanel({ items, settings }) {
 /* ------------------------------ réglages ----------------------------- */
 // La langue de la boutique (ce que lisent les acheteurs, l'affiche, et les
 // titres et descriptions écrits tout seuls) et celle de l'espace vendeur.
-// Les deux vont dans settings (migration-langue.sql) ; celle de l'espace
+// Les deux vont dans settings (install.sql) ; celle de l'espace
 // vendeur est aussi gardée dans ce navigateur, elle marche donc même avant.
 
 const LANG_CHOICES = [
@@ -6819,7 +7402,7 @@ function LangPicker({ value, onPick, disabled, label }) {
 
 function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang, pushToast, onShop }) {
   const t = useT();
-  // Les colonnes n'existent qu'après migration-langue.sql.
+  // Les colonnes n'existent qu'après install.sql.
   const shopReady = 'shop_lang' in settings;
   const adminReady = 'admin_lang' in settings;
   const [saving, setSaving] = useState(false);
@@ -6848,7 +7431,7 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
   };
 
   // Les sites proposés dans le formulaire d'une annonce. La colonne
-  // n'existe qu'après migration-sites.sql. Tout de suite à l'écran ; si la
+  // n'existe qu'après install.sql. Tout de suite à l'écran ; si la
   // base refuse, on revient en arrière.
   const sitesReady = 'link_sites' in settings;
   const sites = linkSites(settings);
@@ -6876,16 +7459,56 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
 
   const removeSite = (name) => saveSites(sites.filter((s) => s !== name));
 
+  // Country, currency, ways to pay, the shop's words, end date and goal:
+  // edited together, saved with the bar at the bottom.
+  const saleOf = (st) => ({
+    shop_lang: shopLang,
+    country: st.country || '',
+    currency: st.currency || SHOP.currency,
+    payment_methods: offeredPayments(st).map((m) => m.id),
+    shop_title: st.shop_title || '',
+    shop_intro: st.shop_intro || '',
+    shop_text: st.shop_text || '',
+    last_day: st.last_day ? String(st.last_day).slice(0, 10) : null,
+    sales_goal: st.sales_goal == null ? '' : String(Number(st.sales_goal)),
+  });
+  const saleJSON = JSON.stringify(saleOf(settings));
+  const [sale, setSale] = useState(() => JSON.parse(saleJSON));
+  useEffect(() => { setSale(JSON.parse(saleJSON)); }, [saleJSON]);
+  const saleDirty = JSON.stringify(sale) !== saleJSON;
+  const changeSale = (patch) => setSale((d) => ({ ...d, ...patch }));
+  const [savingSale, setSavingSale] = useState(false);
+  const saleReady = 'currency' in settings && 'shop_title' in settings;
+
+  const saveSale = async () => {
+    setSavingSale(true);
+    const patch = {
+      country: sale.country || null,
+      currency: sale.currency,
+      payment_methods: sale.payment_methods,
+      shop_title: sale.shop_title.trim(),
+      shop_intro: sale.shop_intro.trim(),
+      shop_text: sale.shop_text.trim(),
+      last_day: sale.last_day || null,
+      sales_goal: cleanGoal(sale.sales_goal),
+    };
+    const { error } = await sb.from('settings').update(patch).eq('id', 1);
+    setSavingSale(false);
+    if (error) return pushToast(t('Could not save, try again.', 'Enregistrement impossible, réessaie.'));
+    setSettings((st) => ({ ...st, ...patch }));
+    pushToast(t('Settings saved.', 'Réglages enregistrés.'));
+  };
+
   return (
-    <div className="space-y-10 max-w-2xl">
+    <div className={`space-y-10 max-w-2xl ${saleDirty ? 'pb-24' : ''}`}>
       {!shopReady && (
         <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900" role="status">
           <p className="font-semibold">{t('One step before changing the shop language', 'Une étape avant de changer la langue de la boutique')}</p>
           <p className="mt-1 leading-relaxed">
-            {t(<>Run <code className="bg-white px-1 rounded">migration-langue.sql</code> once in Supabase
+            {t(<>Run <code className="bg-white px-1 rounded">install.sql</code> once in Supabase
                  (SQL Editor → New query → Run), then refresh the page. The seller space language
                  below already works, on this device.</>,
-               <>Lance <code className="bg-white px-1 rounded">migration-langue.sql</code> une fois dans Supabase
+               <>Lance <code className="bg-white px-1 rounded">install.sql</code> une fois dans Supabase
                  (SQL Editor → New query → Run), puis actualise la page. La langue de l’espace vendeur,
                  plus bas, marche déjà, sur cet appareil.</>)}
           </p>
@@ -6921,11 +7544,55 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
           {adminReady
             ? t('The language of these screens, for you only: buyers never see it. It follows you on every device you log in from.',
                 'La langue de ces écrans, pour toi seulement : les acheteurs ne la voient jamais. Elle te suit sur tous les appareils où tu te connectes.')
-            : t('The language of these screens, for you only: buyers never see it. Kept on this device until migration-langue.sql is run.',
-                'La langue de ces écrans, pour toi seulement : les acheteurs ne la voient jamais. Gardée sur cet appareil tant que migration-langue.sql n’est pas lancé.')}
+            : t('The language of these screens, for you only: buyers never see it. Kept on this device until install.sql is run.',
+                'La langue de ces écrans, pour toi seulement : les acheteurs ne la voient jamais. Gardée sur cet appareil tant que install.sql n’est pas lancé.')}
         </p>
         <LangPicker value={adminLang} onPick={pickAdmin} label={t('Seller space language', 'Langue de l’espace vendeur')} />
       </section>
+
+      {saleReady && (
+        <section>
+          <h2 className="display font-bold text-lg">{t('Where you sell', 'Où tu vends')}</h2>
+          <div className="mt-3">
+            <SaleFields value={sale} onChange={changeSale} />
+          </div>
+          {sale.currency !== settings.currency && settings.currency && (
+            <div className="mt-4 border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900 leading-relaxed" role="status">
+              {t(`Prices you already typed are not converted: 450 stays 450, now in ${sale.currency}. Check your listings after saving.`,
+                 `Les prix déjà tapés ne sont pas convertis : 450 reste 450, maintenant en ${sale.currency}. Vérifie tes annonces après l’enregistrement.`)}
+            </div>
+          )}
+        </section>
+      )}
+
+      {saleReady && (
+        <section>
+          <h2 className="display font-bold text-lg">{t('Shop header', 'En-tête de la boutique')}</h2>
+          <div className="mt-3 space-y-6">
+            <ShopWordsFields value={sale} onChange={changeSale} />
+            <SaleLimitsFields value={sale} onChange={changeSale} />
+          </div>
+        </section>
+      )}
+
+      {saleDirty && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 z-40">
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <span className="text-sm text-slate-600 inline-flex items-center gap-2">
+              <Icon name="alert" className="w-4 h-4 text-blue-700" /> {t('Unsaved changes', 'Modifications non enregistrées')}
+            </span>
+            <div className="flex gap-2">
+              <button onClick={() => setSale(JSON.parse(saleJSON))} className="text-sm text-slate-600 hover:text-slate-900 px-3">
+                {t('Cancel', 'Annuler')}
+              </button>
+              <button onClick={saveSale} disabled={savingSale || !sale.currency}
+                      className="font-semibold bg-blue-700 hover:bg-blue-800 disabled:bg-blue-300 text-white rounded-lg px-5 py-2.5 text-sm">
+                {savingSale ? t('Saving…', 'Enregistrement…') : t('Save', 'Enregistrer')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section>
         <h2 className="display font-bold text-lg">{t('Other sites', 'Autres sites')}</h2>
@@ -6935,9 +7602,9 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
         </p>
         {!sitesReady && (
           <div className="mt-3 border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900 leading-relaxed" role="status">
-            {t(<>To change this list, run <code className="bg-white px-1 rounded">migration-sites.sql</code> once in
+            {t(<>To change this list, run <code className="bg-white px-1 rounded">install.sql</code> once in
                  Supabase (SQL Editor → New query → Run), then refresh the page. Until then, these are the buttons.</>,
-               <>Pour changer cette liste, lance <code className="bg-white px-1 rounded">migration-sites.sql</code> une fois
+               <>Pour changer cette liste, lance <code className="bg-white px-1 rounded">install.sql</code> une fois
                  dans Supabase (SQL Editor → New query → Run), puis actualise la page. D’ici là, ce sont ces boutons-là.</>)}
           </div>
         )}

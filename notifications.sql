@@ -1,35 +1,35 @@
 -- =====================================================================
---  NOTIFICATIONS AUTOMATIQUES : NOUVEAUX RENDEZ-VOUS ET NOUVEAUX MESSAGES
+--  møbel — alerts for new bookings and new messages (optional)
 --
---  Trois options, au choix (tu peux aussi en activer plusieurs) :
---    OPTION A — notification push sur ton téléphone, via ntfy.sh
---               Gratuit, aucun compte à créer, 2 minutes.
---    OPTION B — e-mail, via Resend
---               Gratuit jusqu'à 3000 e-mails par mois, compte à créer.
---    OPTION C — e-mail, via Brevo (plusieurs destinataires possibles)
+--  While the seller space is open, new bookings and messages already pop
+--  up live. This file also alerts you when the site is closed. Pick one
+--  option (or several):
 --
---  Dans tous les cas : SQL Editor > New query > coller > Run.
---  Rien à changer dans le site, ça se passe entièrement côté base.
+--    OPTION A — push notification on your phone, with ntfy.sh
+--               Free, no account, 2 minutes.
+--    OPTION B — e-mail, with Resend
+--               Free up to 3,000 e-mails a month, account needed.
+--    OPTION C — e-mail, with Brevo (several recipients possible)
 --
---  Tu reçois une alerte :
---    · à chaque rendez-vous — UNE seule pour un panier de plusieurs
---      meubles, avec la liste complète ;
---    · à chaque message « rappelez-moi » laissé dans la boutique
---      (il faut avoir lancé migration-panier.sql AVANT ce fichier).
+--  How: run install.sql first. Then SQL Editor → New query → paste the
+--  COMMON STEP and your option → replace the values marked REPLACE → Run.
+--  Nothing to change in the site: it all happens in the database.
 --
---  Tu l'avais déjà lancé avant le panier ? Relance ce fichier en entier
---  (étape commune + ton option, avec ton sujet ou tes adresses) : sinon
---  un panier de 3 meubles t'envoie 3 alertes et les messages aucune.
+--  You get one alert per booking (one for a whole cart, with the list of
+--  items) and one per "call me back" message. Alerts are written in the
+--  seller space language (English or French, Settings tab).
+--
+--  Safe to run again, for example after updating møbel.
 -- =====================================================================
 
 
 -- ---------------------------------------------------------------------
---  ÉTAPE COMMUNE — à lancer avec n'importe quelle option
+--  COMMON STEP — run it with any option
 -- ---------------------------------------------------------------------
--- pg_net permet à la base d'appeler le web.
+-- pg_net lets the database call the web.
 create extension if not exists pg_net;
 
--- Ce que tapent les acheteurs ne doit pas pouvoir mettre en forme l'e-mail.
+-- What buyers type must not be able to format the e-mail.
 create or replace function public.notif_html(t text)
 returns text
 language sql
@@ -39,10 +39,62 @@ as $$
            '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;');
 $$;
 
--- Le contenu d'une alerte de rendez-vous : { title, text, subject, html }.
--- Pour un panier (plusieurs lignes au même cart_id), seule la première
--- ligne donne une alerte, avec tous les meubles ; les autres donnent null.
--- to_jsonb marche même avant migration-quantite.sql / migration-panier.sql.
+-- The language of the alerts: the seller space language, 'en' or 'fr'.
+create or replace function public.notif_lang()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case when (select admin_lang from settings where id = 1) like 'fr%' then 'fr' else 'en' end;
+$$;
+
+-- English or French text, in the alerts' language.
+create or replace function public.notif_t(en text, fr text)
+returns text
+language sql
+stable
+as $$
+  select case when public.notif_lang() = 'fr' then fr else en end;
+$$;
+
+-- The ways to pay, as in PAYMENT_METHODS in index.html.
+create or replace function public.notif_payment(id text)
+returns text
+language sql
+stable
+as $$
+  select case id
+    when 'cash'      then public.notif_t('Cash', 'Espèces')
+    when 'transfer'  then public.notif_t('Bank transfer', 'Virement bancaire')
+    when 'card'      then public.notif_t('Card', 'Carte bancaire')
+    when 'revolut'   then public.notif_t('Revolut instant transfer', 'Virement instantané Revolut')
+    when 'paypal'    then 'PayPal'
+    when 'wero'      then 'Wero'
+    when 'lydia'     then 'Lydia'
+    when 'mobilepay' then 'MobilePay'
+    when 'swish'     then 'Swish'
+    when 'vipps'     then 'Vipps'
+    when 'twint'     then 'TWINT'
+    when 'bizum'     then 'Bizum'
+    when 'blik'      then 'BLIK'
+    when 'satispay'  then 'Satispay'
+    when 'tikkie'    then 'Tikkie'
+    when 'venmo'     then 'Venmo'
+    when 'zelle'     then 'Zelle'
+    when 'cashapp'   then 'Cash App'
+    when 'interac'   then public.notif_t('Interac e-Transfer', 'Virement Interac')
+    when 'payid'     then 'PayID'
+    when 'upi'       then 'UPI'
+    when 'pix'       then 'Pix'
+    else id
+  end;
+$$;
+
+-- A booking alert: { title, text, subject, html }. For a cart (several
+-- rows with the same cart_id), only the first row gives an alert, listing
+-- every item; the others give null.
 create or replace function public.booking_alert(b jsonb)
 returns jsonb
 language plpgsql
@@ -53,66 +105,62 @@ as $$
 declare
   cart  text := b ->> 'cart_id';
   d     date := (b ->> 'day')::date;
+  item  text := public.notif_t('Item', 'Meuble');
   lines text[];
   n     int;
-  pay   text;
+  pay   text := public.notif_payment(b ->> 'payment');
+  at    text := public.notif_t(' at ', ' à ');
+  title text;
 begin
   if cart is not null then
     if exists (select 1 from bookings o
-                where to_jsonb(o) ->> 'cart_id' = cart
+                where o.cart_id::text = cart
                   and o.id::text < b ->> 'id') then
       return null;
     end if;
     select array_agg(
-             case when coalesce((to_jsonb(o) ->> 'quantity')::int, 1) > 1
-                  then (to_jsonb(o) ->> 'quantity') || ' × ' else '' end
-             || coalesce(o.item_title, 'Meuble')
+             case when coalesce(o.quantity, 1) > 1 then o.quantity || ' × ' else '' end
+             || coalesce(o.item_title, item)
              order by o.item_title)
       into lines
       from bookings o
-     where to_jsonb(o) ->> 'cart_id' = cart;
+     where o.cart_id::text = cart;
   end if;
 
   if lines is null then
     lines := array[case when coalesce((b ->> 'quantity')::int, 1) > 1
                         then (b ->> 'quantity') || ' × ' else '' end
-                   || coalesce(b ->> 'item_title', 'Meuble')];
+                   || coalesce(b ->> 'item_title', item)];
   end if;
   n := array_length(lines, 1);
-
-  pay := case b ->> 'payment'
-           when 'mobilepay' then 'MobilePay'
-           when 'cash'      then 'Espèces'
-           when 'revolut'   then 'Virement instantané Revolut' end;
+  title := public.notif_t('New booking', 'Nouveau rendez-vous');
 
   return jsonb_build_object(
-    'title',   case when n > 1 then 'Nouveau rendez-vous — ' || n || ' meubles'
-                    else 'Nouveau rendez-vous' end,
-    'text',    (b ->> 'first_name') || ' — ' || to_char(d, 'DD/MM') || ' à ' || (b ->> 'slot') ||
+    'title',   case when n > 1 then title || ' — ' || n || public.notif_t(' items', ' meubles') else title end,
+    'text',    (b ->> 'first_name') || ' — ' || to_char(d, 'DD/MM') || at || (b ->> 'slot') ||
                E'\n' || array_to_string(lines, E'\n') ||
                E'\n' || (b ->> 'phone') ||
                coalesce(E'\n' || pay, ''),
-    'subject', 'Nouveau rendez-vous — ' || (b ->> 'first_name') ||
-               ' le ' || to_char(d, 'DD/MM') || ' à ' || (b ->> 'slot') ||
-               case when n > 1 then ' (' || n || ' meubles)' else '' end,
+    'subject', title || ' — ' || (b ->> 'first_name') || ', ' || to_char(d, 'DD/MM') || at || (b ->> 'slot') ||
+               case when n > 1 then ' (' || n || public.notif_t(' items)', ' meubles)') else '' end,
     'html',
-      '<h2 style="font-family:sans-serif;color:#16307a">Nouveau rendez-vous</h2>' ||
+      '<h2 style="font-family:sans-serif;color:#16307a">' || title || '</h2>' ||
       '<p style="font-family:sans-serif;font-size:16px;line-height:1.6">' ||
       '<strong>' || notif_html(b ->> 'first_name') || '</strong><br>' ||
-      'Téléphone : <a href="tel:' || notif_html(replace(b ->> 'phone', ' ', '')) || '">' ||
+      public.notif_t('Phone', 'Téléphone') || ' : <a href="tel:' || notif_html(replace(b ->> 'phone', ' ', '')) || '">' ||
         notif_html(b ->> 'phone') || '</a><br>' ||
-      'Date : ' || to_char(d, 'DD/MM/YYYY') || ' à ' || notif_html(b ->> 'slot') || '<br>' ||
+      public.notif_t('Date', 'Date') || ' : ' || to_char(d, 'DD/MM/YYYY') || at || notif_html(b ->> 'slot') || '<br>' ||
       case when n > 1
-           then 'Meubles (même rendez-vous) :<br>• ' ||
+           then public.notif_t('Items (same viewing)', 'Meubles (même rendez-vous)') || ' :<br>• ' ||
                 array_to_string(array(select notif_html(x) from unnest(lines) x), '<br>• ')
-           else 'Meuble : ' || notif_html(lines[1]) end ||
-      coalesce('<br>Paiement : ' || pay, '') ||
+           else item || ' : ' || notif_html(lines[1]) end ||
+      coalesce('<br>' || public.notif_t('Payment', 'Paiement') || ' : ' || notif_html(pay), '') ||
       '</p>'
   );
 end;
 $$;
 
--- Le contenu d'une alerte de message « rappelez-moi ».
+-- A "call me back" message alert.
 create or replace function public.contact_alert(m jsonb)
 returns jsonb
 language plpgsql
@@ -124,11 +172,12 @@ declare
   lines text[];
   n     int;
   msg   text := nullif(btrim(m ->> 'message'), '');
+  item  text := public.notif_t('Item', 'Meuble');
 begin
   select array_agg(
            case when coalesce((x ->> 'quantity')::int, 1) > 1
                 then (x ->> 'quantity') || ' × ' else '' end
-           || coalesce(x ->> 'title', 'Meuble')
+           || coalesce(x ->> 'title', item)
            order by ord)
     into lines
     from jsonb_array_elements(case when jsonb_typeof(m -> 'items') = 'array'
@@ -137,19 +186,21 @@ begin
   n := coalesce(array_length(lines, 1), 0);
 
   return jsonb_build_object(
-    'title',   'À rappeler : ' || (m ->> 'first_name'),
+    'title',   public.notif_t('Call back: ', 'À rappeler : ') || (m ->> 'first_name'),
     'text',    (m ->> 'first_name') || ' — ' || (m ->> 'phone') ||
                case when n > 0 then E'\n' || array_to_string(lines, E'\n') else '' end ||
                coalesce(E'\n« ' || msg || ' »', ''),
-    'subject', 'Message de ' || (m ->> 'first_name') || ' — à rappeler',
+    'subject', public.notif_t('Message from ', 'Message de ') || (m ->> 'first_name') ||
+               public.notif_t(' — call back', ' — à rappeler'),
     'html',
-      '<h2 style="font-family:sans-serif;color:#16307a">Nouveau message : à rappeler</h2>' ||
+      '<h2 style="font-family:sans-serif;color:#16307a">' ||
+        public.notif_t('New message: call back', 'Nouveau message : à rappeler') || '</h2>' ||
       '<p style="font-family:sans-serif;font-size:16px;line-height:1.6">' ||
       '<strong>' || notif_html(m ->> 'first_name') || '</strong><br>' ||
-      'Téléphone : <a href="tel:' || notif_html(replace(m ->> 'phone', ' ', '')) || '">' ||
+      public.notif_t('Phone', 'Téléphone') || ' : <a href="tel:' || notif_html(replace(m ->> 'phone', ' ', '')) || '">' ||
         notif_html(m ->> 'phone') || '</a>' ||
       case when n > 0
-           then '<br>À propos de :<br>• ' ||
+           then '<br>' || public.notif_t('About', 'À propos de') || ' :<br>• ' ||
                 array_to_string(array(select notif_html(x) from unnest(lines) x), '<br>• ')
            else '' end ||
       '</p>' ||
@@ -160,25 +211,27 @@ begin
 end;
 $$;
 
--- Personne ne doit pouvoir les appeler depuis le site : seuls les
--- déclencheurs ci-dessous s'en servent.
-revoke all on function public.notif_html(text)     from public, anon, authenticated;
-revoke all on function public.booking_alert(jsonb) from public, anon, authenticated;
-revoke all on function public.contact_alert(jsonb) from public, anon, authenticated;
+-- No one may call these from the site: only the triggers below use them.
+revoke all on function public.notif_html(text)           from public, anon, authenticated;
+revoke all on function public.notif_lang()               from public, anon, authenticated;
+revoke all on function public.notif_t(text, text)        from public, anon, authenticated;
+revoke all on function public.notif_payment(text)        from public, anon, authenticated;
+revoke all on function public.booking_alert(jsonb)       from public, anon, authenticated;
+revoke all on function public.contact_alert(jsonb)       from public, anon, authenticated;
 
 
 -- =====================================================================
---  OPTION A — PUSH SUR LE TÉLÉPHONE (ntfy.sh)
+--  OPTION A — PUSH ON YOUR PHONE (ntfy.sh)
 -- =====================================================================
 --
---  Avant de lancer ce bloc :
---    1. Installe l'application « ntfy » (App Store / Play Store / F-Droid).
---    2. Invente un nom de sujet LONG ET IMPOSSIBLE À DEVINER.
---       Le sujet est public : qui le connaît reçoit tes notifications.
---       Mauvais  : meubles
---       Bon      : meubles-odense-8fk29dqz71
---    3. Dans l'application : « + » puis abonne-toi à ce sujet.
---    4. Remplace le sujet ci-dessous (UN seul endroit).
+--  Before running this block:
+--    1. Install the "ntfy" app (App Store / Play Store / F-Droid).
+--    2. Make up a LONG topic name THAT NO ONE CAN GUESS.
+--       Topics are public: whoever knows it receives your alerts.
+--       Bad:   furniture
+--       Good:  mobel-7hq2k9xz41wd
+--    3. In the app: "+", then subscribe to that topic.
+--    4. Replace the topic below (ONE place).
 --
 create or replace function public.notify_send_push(title text, message text, tag text)
 returns void
@@ -187,11 +240,11 @@ security definer
 set search_path = public
 as $$
 declare
-  topic text := 'REMPLACE-PAR-TON-SUJET-SECRET';
+  topic text := 'REPLACE-WITH-YOUR-SECRET-TOPIC';
 begin
-  -- Sujet pas encore remplacé : on n'envoie rien plutôt que d'envoyer
-  -- les prénoms et numéros sur un sujet que tout le monde peut lire.
-  if topic like 'REMPLACE-%' then
+  -- Topic not replaced yet: send nothing rather than names and numbers
+  -- on a topic anyone can read.
+  if topic like 'REPLACE-%' then
     return;
   end if;
   perform net.http_post(
@@ -226,8 +279,7 @@ begin
   return new;
 exception
   when others then
-    -- Si la notification échoue, la réservation de l'acheteur doit
-    -- quand même aboutir. On ignore l'erreur volontairement.
+    -- If the alert fails, the buyer's booking must still go through.
     return new;
 end;
 $$;
@@ -255,35 +307,28 @@ exception
 end;
 $$;
 
-do $$
-begin
-  if to_regclass('public.contact_requests') is null then
-    raise notice 'Pas encore de table contact_requests : lance migration-panier.sql, puis relance ce fichier pour être prévenue des messages.';
-    return;
-  end if;
-  execute 'drop trigger if exists on_new_contact_push on public.contact_requests';
-  execute 'create trigger on_new_contact_push after insert on public.contact_requests '
-       || 'for each row execute function public.notify_contact_push()';
-end $$;
+drop trigger if exists on_new_contact_push on public.contact_requests;
+create trigger on_new_contact_push
+  after insert on public.contact_requests
+  for each row execute function public.notify_contact_push();
 
 
 -- =====================================================================
 --  OPTION B — E-MAIL (Resend)
 -- =====================================================================
 --
---  Avant de lancer ce bloc :
---    1. Crée un compte sur resend.com avec l'adresse où tu veux recevoir
---       les alertes, puis API Keys > Create API Key (elle commence par re_).
---    2. Sans domaine vérifié, Resend n'autorise l'envoi QUE vers l'adresse
---       de ton compte, depuis onboarding@resend.dev. C'est exactement
---       ce qu'il te faut : tu t'écris à toi-même.
---    3. Enregistre la clé dans le coffre-fort de Supabase (à faire UNE fois,
---       en décommentant la ligne ci-dessous et en y collant ta vraie clé) :
+--  Before running this block:
+--    1. Create an account on resend.com with the address where you want
+--       the alerts, then API Keys → Create API Key (it starts with re_).
+--    2. Without a verified domain, Resend only sends TO your account's
+--       address, FROM onboarding@resend.dev. That is all you need: you
+--       write to yourself.
+--    3. Store the key in Supabase's vault, ONCE: uncomment the line
+--       below, paste your real key, run it alone.
 
--- select vault.create_secret('re_colle_ta_cle_ici', 'resend_key', 'Clé API Resend');
+-- select vault.create_secret('re_paste_your_key_here', 'resend_key', 'Resend API key');
 
---    4. Remplace ton.adresse@example.com plus bas (UN seul endroit), puis
---       lance le reste.
+--    4. Replace you@example.com below (ONE place), then run the rest.
 --
 create or replace function public.notify_send_resend(subject text, html text)
 returns void
@@ -309,8 +354,8 @@ begin
       'Authorization', 'Bearer ' || v_key
     ),
     body := jsonb_build_object(
-      'from',    'Meubles <onboarding@resend.dev>',
-      'to',      jsonb_build_array('ton.adresse@example.com'),
+      'from',    'møbel <onboarding@resend.dev>',
+      'to',      jsonb_build_array('you@example.com'),
       'subject', subject,
       'html',    html
     )
@@ -363,76 +408,33 @@ exception
 end;
 $$;
 
-do $$
-begin
-  if to_regclass('public.contact_requests') is null then
-    raise notice 'Pas encore de table contact_requests : lance migration-panier.sql, puis relance ce fichier pour être prévenue des messages.';
-    return;
-  end if;
-  execute 'drop trigger if exists on_new_contact_email on public.contact_requests';
-  execute 'create trigger on_new_contact_email after insert on public.contact_requests '
-       || 'for each row execute function public.notify_contact_email()';
-end $$;
+drop trigger if exists on_new_contact_email on public.contact_requests;
+create trigger on_new_contact_email
+  after insert on public.contact_requests
+  for each row execute function public.notify_contact_email();
 
 
 -- =====================================================================
---  TESTER
--- =====================================================================
---  Insère un faux rendez-vous ou un faux message : la notification doit
---  arriver en quelques secondes. Supprime-les ensuite.
-
--- insert into public.bookings (item_title, first_name, phone, day, slot)
--- values ('Test', 'Test', '+45 00 00 00 00', current_date + 1, '10:00');
--- delete from public.bookings where first_name = 'Test';
-
--- insert into public.contact_requests (first_name, phone, message)
--- values ('Test', '+45 00 00 00 00', 'Ceci est un test');
--- delete from public.contact_requests where first_name = 'Test';
-
-
---  Si rien n'arrive, regarde ce que la base a réellement envoyé et reçu :
-
--- select id, status_code, content, created
---   from net._http_response
---  order by created desc
---  limit 5;
-
---  status_code 200 ou 202 = c'est parti côté Supabase, le problème est
---  ailleurs (mauvais sujet ntfy, application non abonnée, spam).
-
-
--- =====================================================================
---  DÉSACTIVER (après la vente, ou si tu changes d'avis)
--- =====================================================================
--- drop trigger if exists on_new_booking_push   on public.bookings;
--- drop trigger if exists on_new_booking_email  on public.bookings;
--- drop trigger if exists on_new_contact_push   on public.contact_requests;
--- drop trigger if exists on_new_contact_email  on public.contact_requests;
-
-
--- =====================================================================
---  OPTION C — E-MAIL VIA BREVO (recommandé si vous êtes deux)
+--  OPTION C — E-MAIL WITH BREVO (best if several people get the alerts)
 --
---  Avantage sur Resend : une simple adresse d'expédition validée par
---  e-mail suffit, et tu peux ensuite écrire à autant de destinataires
---  que tu veux, sans posséder de domaine.
---  Gratuit jusqu'à 300 e-mails par jour.
+--  Unlike Resend, a sender address confirmed by e-mail is enough, and
+--  you can then write to as many recipients as you like, without owning
+--  a domain. Free up to 300 e-mails a day.
 --
---  Avant de lancer ce bloc :
---    1. Crée un compte sur brevo.com.
---    2. Senders, Domains & Dedicated IPs > Senders > Add a sender :
---       mets ton adresse, Brevo t'envoie un lien de confirmation.
---       Tant que le sender n'est pas validé, rien ne part.
---    3. SMTP & API > API Keys > Generate a new API key (xkeysib-…).
---    4. Enregistre la clé dans le coffre-fort, UNE fois :
+--  Before running this block:
+--    1. Create an account on brevo.com.
+--    2. Senders, Domains & Dedicated IPs → Senders → Add a sender: your
+--       address. Brevo sends a confirmation link; nothing goes out until
+--       the sender is confirmed.
+--    3. SMTP & API → API Keys → Generate a new API key (xkeysib-…).
+--    4. Store the key in the vault, ONCE:
 
--- select vault.create_secret('xkeysib_colle_ta_cle_ici', 'brevo_key', 'Clé API Brevo');
+-- select vault.create_secret('xkeysib_paste_your_key_here', 'brevo_key', 'Brevo API key');
 
---    5. Remplace les trois adresses ci-dessous, puis lance le reste
---       (avec l'étape commune tout en haut).
---       Ce bloc remplace le déclencheur e-mail : si tu avais activé
---       l'option Resend, elle est automatiquement désactivée, tu ne
---       recevras pas deux fois le même message.
+--    5. Replace the three addresses below, then run the rest (with the
+--       common step at the top). This block replaces the e-mail trigger:
+--       if option B was on, it is turned off, you will not get each alert
+--       twice.
 --
 create or replace function public.notify_send_brevo(subject text, html text)
 returns void
@@ -459,13 +461,13 @@ begin
       'api-key',      v_key
     ),
     body := jsonb_build_object(
-      -- DOIT être l'adresse validée à l'étape 2
-      'sender', jsonb_build_object('name', 'Vente de meubles',
-                                   'email', 'ton.adresse@example.com'),
-      -- autant de destinataires que tu veux
+      -- MUST be the address confirmed in step 2
+      'sender', jsonb_build_object('name', 'møbel',
+                                   'email', 'you@example.com'),
+      -- as many recipients as you like
       'to', jsonb_build_array(
-              jsonb_build_object('email', 'ton.adresse@example.com'),
-              jsonb_build_object('email', 'la.deuxieme@example.com')
+              jsonb_build_object('email', 'you@example.com'),
+              jsonb_build_object('email', 'someone.else@example.com')
             ),
       'subject',     subject,
       'htmlContent', html
@@ -519,13 +521,41 @@ exception
 end;
 $$;
 
-do $$
-begin
-  if to_regclass('public.contact_requests') is null then
-    raise notice 'Pas encore de table contact_requests : lance migration-panier.sql, puis relance ce fichier pour être prévenue des messages.';
-    return;
-  end if;
-  execute 'drop trigger if exists on_new_contact_email on public.contact_requests';
-  execute 'create trigger on_new_contact_email after insert on public.contact_requests '
-       || 'for each row execute function public.notify_contact_brevo()';
-end $$;
+drop trigger if exists on_new_contact_email on public.contact_requests;
+create trigger on_new_contact_email
+  after insert on public.contact_requests
+  for each row execute function public.notify_contact_brevo();
+
+
+-- =====================================================================
+--  TEST
+-- =====================================================================
+--  Insert a fake booking or message: the alert should arrive within
+--  seconds. Delete them afterwards.
+
+-- insert into public.bookings (item_title, first_name, phone, day, slot)
+-- values ('Test', 'Test', '+1 555 000 0000', current_date + 1, '10:00');
+-- delete from public.bookings where first_name = 'Test';
+
+-- insert into public.contact_requests (first_name, phone, message)
+-- values ('Test', '+1 555 000 0000', 'This is a test');
+-- delete from public.contact_requests where first_name = 'Test';
+
+--  Nothing arrives? See what the database actually sent and received:
+
+-- select id, status_code, content, created
+--   from net._http_response
+--  order by created desc
+--  limit 5;
+
+--  status_code 200 or 202 = it left Supabase; the problem is elsewhere
+--  (wrong ntfy topic, app not subscribed, spam folder).
+
+
+-- =====================================================================
+--  TURN OFF (after the sale, or if you change your mind)
+-- =====================================================================
+-- drop trigger if exists on_new_booking_push   on public.bookings;
+-- drop trigger if exists on_new_booking_email  on public.bookings;
+-- drop trigger if exists on_new_contact_push   on public.contact_requests;
+-- drop trigger if exists on_new_contact_email  on public.contact_requests;

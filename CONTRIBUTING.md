@@ -29,7 +29,7 @@ Please keep these in mind before proposing a change. They are why the project ex
 
 - **Report a bug.** Open an issue with the steps to reproduce it, what you expected, what
   happened, your browser or phone, and a screenshot made with fake data. If it involves the
-  database, include what `verifier-supabase.sql` says.
+  database, include the message the seller space or the SQL Editor shows.
 - **Suggest a feature.** Open an issue first and describe the situation it solves: who
   needs it, and when during a sale.
 - **Translations.** The site speaks English and French today, both written side by side in
@@ -41,43 +41,23 @@ Please keep these in mind before proposing a change. They are why the project ex
   are welcome, in both languages.
 - **Documentation.** Anything that was unclear when you set the project up.
 
-The roadmap is in [PLAN-OPEN-SOURCE.md](PLAN-OPEN-SOURCE.md) (in French for now): settings
-for currency, country and languages, a single install script, and more.
+What's planned is in [ROADMAP.md](ROADMAP.md): languages in separate files, prices as
+numbers, splitting `index.html`, and more. Pick an item, open an issue to say you're on it.
 
 ## Set up a development copy
 
 1. **Fork and clone** the repository.
 2. **Create your own Supabase project** on [supabase.com](https://supabase.com) (free).
    Never point a development copy at someone else's project.
-3. **Create the tables.** In Supabase, **SQL Editor → New query**, paste each file and
-   **Run**, in this order:
-
-   1. `schema.sql`
-   2. `migration-paiement.sql`
-   3. `migration-quantite.sql`
-   4. `migration-photos.sql`
-   5. `migration-stats.sql`
-   6. `migration-prix-vente.sql`
-   7. `migration-reservation.sql`
-   8. `migration-panier.sql`
-   9. `migration-langue.sql`
-   10. `migration-lots.sql`
-   11. `migration-sites.sql`
-
-   `notifications.sql` is optional (push or e-mail alerts for the seller). Then run
-   `verifier-supabase.sql`: every line should say `OK`.
-
-   > **Known gap:** `schema.sql` is not in the repository at the moment. Replacing it and
-   > the migrations with a single `install.sql` is the first step of the roadmap, and the
-   > most useful thing to help with right now.
-
+3. **Create the tables.** In Supabase, **SQL Editor → New query**, paste `install.sql` and
+   **Run**. `notifications.sql` is optional (push or e-mail alerts for the seller).
 4. **Create a seller account.** **Authentication → Users → Add user → Create new user**,
-   tick **Auto Confirm User**. Then, in **Authentication → Sign In / Providers**, turn off
-   **Allow new users to sign up**.
+   tick **Auto Confirm User**. The first account is the seller. Then, in
+   **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**.
 5. **Connect the page.** In **Project Settings → Data API**, copy the Project URL and the
-   `anon` public key into `window.CONFIG` near the top of `index.html`. Never use the
-   `service_role` key. Keep this change out of your pull requests (stage your work with
-   `git add -p`).
+   `anon` public key into `config.js`. Never use the `service_role` key. Keep this change
+   out of your pull requests: `git update-index --skip-worktree config.js` makes git
+   ignore it on your machine.
 6. **Serve the folder** and open it:
 
    ```bash
@@ -85,20 +65,20 @@ for currency, country and languages, a single install script, and more.
    ```
 
    The shop is at `http://localhost:8000`, the seller space at
-   `http://localhost:8000/#vendeur`. Visits from `localhost` are not counted in the stats.
-7. **Add a few listings with made-up data.**
+   `http://localhost:8000/#admin`. Visits from `localhost` are not counted in the stats.
+7. **Go through First steps, then add a few listings with made-up data.** To see First
+   steps again, run `update public.settings set setup_done = false;` in the SQL Editor.
 
 ## How the code is organised
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole app. Configuration at the top, then one `<script type="text/babel">` |
-| `migration-*.sql` | One file per database change, run once by each seller |
-| `verifier-supabase.sql` | Read-only check: one line per feature, `OK` or which file to run |
+| `index.html` | The whole app: libraries, styles, then one `<script type="text/babel">` |
+| `config.js` | The seller's Supabase URL and anon key. The project never changes it after 1.0 |
+| `install.sql` | The whole database, safe to run again: new installs and updates |
 | `notifications.sql` | Optional alerts (ntfy push, Resend or Brevo e-mail) sent by database triggers |
-| `reset-mot-de-passe.sql` | Template to reset the seller password; keep the placeholders |
+| `about/` | The project's presentation page |
 | `.github/workflows/supabase-keepalive.yml` | Daily request so Supabase doesn't pause the project |
-| `app.jsx`, `affiche.html` | Old versions, unused. Don't edit them |
 
 Inside `index.html`, sections start with comments such as
 `/* ------ langues ------ */`. The main components:
@@ -108,7 +88,10 @@ Inside `index.html`, sections start with comments such as
   `ContactSheet`.
 - `Admin` is the seller space, one panel per tab: `ItemsPanel`, `BundlesPanel`,
   `BookingsPanel`, `MessagesPanel`, `PlanningPanel`, `PosterPanel`, `StatsPanel`,
-  `SettingsPanel`.
+  `SettingsPanel`. Before them, the set-up screens: `NotConfigured`, `DatabaseScreen`,
+  `NotSeller` and `FirstSteps`.
+- `SHOP` holds what plain helpers need from the settings (currency, country, last day,
+  goal). `App` fills it on every render.
 
 Search for a component by name: line numbers move often.
 
@@ -122,33 +105,33 @@ Search for a component by name: line numbers move often.
   seller space). Text written in the seller space but read by buyers (listing titles,
   descriptions, the poster) uses the shop language: `makeT(useShopLang())`.
 - Dates and numbers go through `Intl` with `t.locale`. Don't build them by hand.
-- Prices go through the existing helpers (`showPrice`, `priceFor`, `fmtKr`). Currency
-  handling is going to change, and keeping it in one place makes that possible.
+- Money goes through the helpers: `formatMoney(n)` for an amount, `priceText(raw)` and
+  `showPrice(raw, lang)` for a price as typed, `currencySymbol()` next to a price field.
+  Never write a currency sign by hand.
 - Keep sentences short and concrete. In French, the seller space says « tu ».
 
 ### Database changes
 
-Every change ships as a new `migration-<topic>.sql`:
+Every change goes into `install.sql`, which sellers run again after each update:
 
-- **Safe to run twice**: `add column if not exists`, `create table if not exists`,
+- **Safe to run again**, on a new project and on an older install: `add column if not
+  exists` (also in the "Older installs" block of the table), `create table if not exists`,
   `create or replace function`, `drop constraint if exists` before `add constraint`.
-- **A header comment** in plain words: what it adds, and how to run it (SQL Editor → New
-  query → Run).
-- **Ends with** `notify pgrst, 'reload schema';` so the site sees new columns at once.
-- **Row Level Security** on every new table. Anonymous visitors get only what they need,
-  with column-level grants where possible (see `contact_requests` in
-  `migration-panier.sql`).
-- **Add a line** to `verifier-supabase.sql` and a row to the table in `README.md`.
+- **Comments in plain English**: what a table holds, who can read or write it.
+- **Row Level Security** on every new table, with its rules in section 10: visitors get
+  only what they need, the seller is `public.is_seller()`. Column-level grants where
+  possible (see `bookings` and `contact_requests` in section 11).
+- **Raise the version**: `schema_version` at the end of `install.sql` and
+  `SCHEMA_VERSION` in `index.html`, so older databases are asked to update.
+- **Add a line to `CHANGELOG.md`** saying sellers must run `install.sql` again.
 
-### The site must keep working before the migration is run
+### Between the update and `install.sql`
 
-Sellers update `index.html` and run migrations whenever they get to it, sometimes days
-apart. The code checks for what's missing and carries on without it:
-
-- a new column: `'link_sites' in settings`;
-- a new table: the query's error means "not installed" (see `fetchBundles`);
-- in the seller space, an amber note names the file to run; in the shop, the feature is
-  simply not shown.
+Sellers update the site and run `install.sql` whenever they get to it, sometimes days
+apart. Meanwhile the shop must keep working, and the seller space asks for the update
+(`DatabaseScreen`, from `settings.schema_version`). A new feature can simply be hidden in
+the shop until its column exists (`'link_sites' in settings`). Older checks of this kind
+are still in the code; removing them is on the roadmap.
 
 ### Browser storage
 
@@ -162,8 +145,8 @@ choices). Anything the seller expects to find on another device goes in the data
 - Check at phone width (375 px) as well as on a computer.
 - Buttons with only an icon need an `aria-label`. Sheets and dialogs use `role="dialog"`
   and `aria-modal="true"`.
-- Comments explain why, not what. Most are in French today; English is welcome in new code,
-  as the project is moving to English.
+- Comments explain why, not what, in English. Many older ones are still in French:
+  translating a file you're working on is welcome, in its own commit.
 
 ## Before opening a pull request
 
@@ -172,8 +155,10 @@ There are no automated tests yet, so check by hand:
 - [ ] The shop and the seller space, in English and in French (Settings tab).
 - [ ] At phone width and on a computer.
 - [ ] No errors in the browser console.
-- [ ] Database change: the site works before the migration and after it, the migration
-      runs twice without error, and `verifier-supabase.sql` says `OK`.
+- [ ] Database change: `install.sql` runs twice without error on a new project and on an
+      older install, and the site works before and after it.
+- [ ] Money: try a shop in another currency and country (Settings), e.g. EUR in France
+      and USD in the United States.
 - [ ] Poster change: print preview on A4, one and two per sheet.
 - [ ] No keys, passwords, real names, phone numbers or addresses in the diff or the
       screenshots.
@@ -183,7 +168,7 @@ Then:
 - One topic per pull request.
 - Say what changes and why, and link the issue.
 - Add before and after screenshots for anything visible, with made-up data.
-- List any migration sellers need to run.
+- Say if sellers need to run `install.sql` again.
 - Write commit messages that describe the change ("Add a currency setting"), not
   "update".
 
