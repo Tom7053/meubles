@@ -135,6 +135,9 @@ alter table public.settings add column if not exists last_day date;
 alter table public.settings add column if not exists sales_goal numeric(12, 2);
 alter table public.settings add column if not exists setup_done boolean not null default false;
 alter table public.settings add column if not exists schema_version int not null default 0;
+-- Donation mode (whole shop), until a given time.
+alter table public.settings add column if not exists donation_mode boolean not null default false;
+alter table public.settings add column if not exists donation_until timestamptz;
 
 -- Before version 1, every shop was priced in Danish kroner and offered
 -- Revolut and cash: an older install keeps that until the seller changes it.

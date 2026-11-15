@@ -265,7 +265,7 @@ const DEFAULT_SETTINGS = {
 // What plain helper functions need from the settings (currency, country,
 // last day, goal). App fills it from the settings on every render, before
 // anything is drawn, so every price and calendar follows the latest choice.
-const SHOP = { currency: 'EUR', country: '', lang: 'en', lastDay: '', goal: 0 };
+const SHOP = { currency: 'EUR', country: '', lang: 'en', lastDay: '', goal: 0, donation: false };
 
 // The shop header, typed in Settings, or neutral words in the shop language.
 // Also the defaults of the poster.
@@ -346,6 +346,7 @@ function currencySymbol(currency) {
 function priceText(raw) {
   const p = String(raw || '').trim();
   if (!p) return '';
+  if (isDonPrice(p)) return donWord(SHOP.lang);
   return /\d/.test(p) ? formatMoney(priceValue(p)) : p;
 }
 
@@ -358,7 +359,32 @@ function cleanPriceInput(raw) {
 }
 
 // Le prix vu par les acheteurs : sans prix, c'est gratuit.
-const showPrice = (raw, lang) => priceText(raw) || (lang === 'fr' ? 'Gratuit' : 'Free');
+const showPrice = (raw, lang) => priceText(raw) || (SHOP.donation ? donWord(lang) : lang === 'fr' ? 'Gratuit' : 'Free');
+
+/* ------------------------------- don -------------------------------- */
+// Mode don, à l'unité : le prix d'un meuble vaut « don » (items.price).
+// Mode don sur tout le site : settings.donation_mode, jusqu'à
+// settings.donation_until (heure comprise). Passé cette heure, la boutique
+// reprend toute seule ses vrais prix.
+const DON = 'don';
+const isDonPrice = (raw) => String(raw || '').trim().toLowerCase() === DON;
+const donWord = (lang) => (lang === 'fr' ? 'Don' : 'Donation');
+const donationOn = (st) => !!st.donation_mode
+  && (!st.donation_until || new Date(st.donation_until).getTime() > Date.now());
+const donationTitle = (lang) => (lang === 'fr' ? 'Don de meubles' : 'Furniture donation');
+
+// Un instant ISO ⇄ la valeur d'un <input type="datetime-local"> (heure locale).
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const fromLocalInput = (v) => {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 /* ------------------------- plusieurs exemplaires -------------------- */
 // Un meuble peut exister en plusieurs exemplaires identiques (2 lits) :
@@ -535,6 +561,7 @@ const suggestedPayments = (country) => ['cash', ...(COUNTRY_PAYMENT[country] ? [
 // The payment line of the shop: the text typed in Schedule, or the ways to
 // pay offered ("Cash or MobilePay").
 function paymentLine(settings, lang) {
+  if (SHOP.donation) return lang === 'fr' ? 'rien à payer, c’est un don' : 'nothing to pay, it is a donation';
   const typed = String(settings.payment || '').trim();
   if (typed) return typed;
   const labels = offeredPayments(settings).map((m) => m[lang] || m.en);
@@ -1359,14 +1386,25 @@ function App() {
     lang: shopLang,
     lastDay: settings.last_day ? String(settings.last_day).slice(0, 10) : '',
     goal: Number(settings.sales_goal) || 0,
+    donation: donationOn(settings),
   });
+
+  // Fin du mode don : on redessine à l'heure dite, la boutique revient aux prix.
+  const [, setDonTick] = useState(0);
+  useEffect(() => {
+    if (!settings.donation_mode || !settings.donation_until) return undefined;
+    const ms = new Date(settings.donation_until).getTime() - Date.now();
+    if (ms <= 0) return undefined;
+    const id = setTimeout(() => setDonTick((n) => n + 1), Math.min(ms + 500, 2147483000));
+    return () => clearTimeout(id);
+  }, [settings.donation_mode, settings.donation_until]);
 
   // La page parle la langue de l'écran affiché (lecteurs d'écran,
   // traduction automatique du navigateur).
   useEffect(() => {
     document.documentElement.lang = route === 'shop' ? shopLang : adminLang;
-    document.title = shopTitle(settings, shopLang);
-  }, [route, shopLang, adminLang, settings.shop_title]);
+    document.title = route === 'shop' && SHOP.donation ? donationTitle(shopLang) : shopTitle(settings, shopLang);
+  }, [route, shopLang, adminLang, settings.shop_title, settings.donation_mode, settings.donation_until]);
 
   /* ---- session ---- */
   useEffect(() => {
@@ -1553,7 +1591,7 @@ function App() {
       ) : route === 'shop' ? (
         <LangContext.Provider value={shopLang}>
         <Shop
-          items={items}
+          items={SHOP.donation ? items.map((i) => ({ ...i, price: DON })) : items}
           bundles={bundles}
           photoCounts={photoCounts}
           settings={settings}
@@ -1701,6 +1739,52 @@ function useOverlay(onClose) {
   }, []);
 }
 
+// Bandeau « don » avec compte à rebours (jusqu'à settings.donation_until).
+function DonationBanner({ until }) {
+  const t = useT();
+  const end = until ? new Date(until).getTime() : 0;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!end) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [end]);
+  const left = Math.max(0, Math.floor((end - now) / 1000));
+  const d = Math.floor(left / 86400);
+  const h = Math.floor((left % 86400) / 3600);
+  const m = Math.floor((left % 3600) / 60);
+  const sec = left % 60;
+  const cell = (n, en, fr) => (
+    <span className="rounded-lg bg-white/15 px-2.5 py-1.5 text-center min-w-[3.4rem]">
+      <span className="block display font-bold text-2xl leading-none tabular-nums">{pad(n)}</span>
+      <span className="block text-[11px] uppercase tracking-wide text-blue-100 mt-1">{t(en, fr)}</span>
+    </span>
+  );
+  return (
+    <div className="mt-5 rounded-2xl bg-white/10 border border-white/20 px-4 py-4 max-w-xl" role="status">
+      <p className="font-semibold text-lg leading-snug">
+        {t('Everything is free, it is a donation.', 'Tout est en don, rien à payer.')}
+      </p>
+      <p className="text-blue-100 mt-0.5">
+        {t('First come, first reserved.', 'Premier arrivé, premier réservé.')}
+      </p>
+      {end > 0 && (
+        <div className="mt-3">
+          <p className="text-sm text-blue-100">
+            {t('Donation ends', 'Fin du don')} {new Date(end).toLocaleDateString(t.locale, { weekday: 'long', day: 'numeric', month: 'long' })} {t('at', 'à')} {pad(new Date(end).getHours())}:{pad(new Date(end).getMinutes())}
+          </p>
+          <div className="mt-2 flex gap-2" aria-label={t('Time left', 'Temps restant')}>
+            {d > 0 && cell(d, 'days', 'jours')}
+            {cell(h, 'hours', 'heures')}
+            {cell(m, 'min', 'min')}
+            {cell(sec, 'sec', 'sec')}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFailed, onRetry, onAdmin,
                 onSlotTaken, onBooked, onItemTaken }) {
   const t = useT();
@@ -1822,21 +1906,30 @@ function Shop({ items, bundles, photoCounts, settings, busy, held, ready, loadFa
      t(`I text you to confirm. Pay by ${paymentLine(settings, 'en')}.`, `Je vous écris pour confirmer. Paiement : ${paymentLine(settings, 'fr')}.`)],
   ];
   const itemWord = (n) => t(`item${n > 1 ? 's' : ''}`, `meuble${n > 1 ? 's' : ''}`);
+  const donation = SHOP.donation;
+  if (donation) {
+    steps[1] = [t('Book first', 'Réserver vite'),
+      t('First come, first reserved. Choose a day, leave your first name and number.',
+        'Premier arrivé, premier réservé. Choisissez un jour, laissez votre prénom et votre numéro.')];
+    steps[2] = [t('Pick up', 'Venir chercher'),
+      t('I text you to confirm. Nothing to pay: it is a donation.', 'Je vous écris pour confirmer. Rien à payer : c’est un don.')];
+  }
 
   return (
     <div className={`min-h-screen bg-slate-50 ${cartLines.length ? 'pb-24' : ''}`}>
       <header className="bg-blue-800 text-white">
         <div className="max-w-5xl mx-auto px-5 pt-9 pb-16 sm:pt-14 sm:pb-20">
           <p className="text-blue-200 text-sm font-medium">{shopIntro(settings, t.lang)}</p>
-          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight mt-1">{shopTitle(settings, t.lang)}</h1>
+          <h1 className="display font-bold text-4xl sm:text-5xl leading-tight mt-1">{donation ? donationTitle(t.lang) : shopTitle(settings, t.lang)}</h1>
           <p className="mt-3 text-blue-100 text-lg leading-relaxed max-w-xl whitespace-pre-line">{shopText(settings, t.lang)}</p>
+          {donation && <DonationBanner until={settings.donation_until} />}
           <div className="mt-5 flex flex-wrap gap-2 text-sm">
             {settings.address && (
               <a href="#where" className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1.5">
                 <Icon name="pin" className="w-4 h-4" /> {settings.address}
               </a>
             )}
-            {paymentLine(settings, t.lang) && (
+            {!donation && paymentLine(settings, t.lang) && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
                 <Icon name="card" className="w-4 h-4" /> {paymentLine(settings, t.lang)}
               </span>
@@ -5381,9 +5474,16 @@ function ItemsPanel({ items, setItems, bundles, manyPhotos, bookings, photoCount
             <label className="block">
               <span className="text-sm text-slate-600">{t('Price', 'Prix')}</span>
               <span className="mt-1 flex items-center border border-slate-200 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-400">
-                <input value={form.price} onChange={(e) => change({ ...form, price: e.target.value }, details)} inputMode="decimal"
-                       className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none" placeholder="450" />
+                <input value={isDonPrice(form.price) ? '' : form.price} disabled={isDonPrice(form.price)}
+                       onChange={(e) => change({ ...form, price: e.target.value }, details)} inputMode="decimal"
+                       className="w-full min-w-0 rounded-lg px-3 py-2 bg-transparent outline-none disabled:opacity-40"
+                       placeholder={isDonPrice(form.price) ? donWord(shopLang) : '450'} />
                 <span className="pr-3 text-slate-500 whitespace-nowrap">{currencySymbol()}</span>
+              </span>
+              <span className="mt-1.5 flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={isDonPrice(form.price)}
+                       onChange={(e) => change({ ...form, price: e.target.checked ? DON : '' }, details)} />
+                {t('Donation (no price)', 'Don (pas de prix)')}
               </span>
             </label>
             <label className="block">
@@ -7400,6 +7500,75 @@ function LangPicker({ value, onPick, disabled, label }) {
   );
 }
 
+// Mode don sur tout le site : titre « Don », prix remplacés par « Don »,
+// compte à rebours jusqu'à l'heure choisie. Un seul bouton : activer / arrêter.
+function DonationSection({ settings, setSettings, pushToast }) {
+  const t = useT();
+  const ready = 'donation_mode' in settings;
+  const live = donationOn(settings);
+  const [until, setUntil] = useState(toLocalInput(settings.donation_until));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setUntil(toLocalInput(settings.donation_until)); }, [settings.donation_until]);
+
+  const save = async (patch, okMsg) => {
+    setBusy(true);
+    const { error } = await sb.from('settings').update(patch).eq('id', 1);
+    setBusy(false);
+    if (error) return pushToast(t('Could not save, try again.', 'Enregistrement impossible, réessaie.'));
+    setSettings((st) => ({ ...st, ...patch }));
+    pushToast(okMsg);
+  };
+  const start = () => {
+    const iso = fromLocalInput(until);
+    if (iso && new Date(iso).getTime() <= Date.now()) {
+      return pushToast(t('Pick an end time in the future.', 'Choisis une heure de fin dans le futur.'));
+    }
+    return save({ donation_mode: true, donation_until: iso },
+      t('Donation mode is on.', 'Le mode don est activé.'));
+  };
+  const stop = () => save({ donation_mode: false }, t('Donation mode is off.', 'Le mode don est arrêté.'));
+
+  return (
+    <section>
+      <h2 className="display font-bold text-lg">{t('Donation mode', 'Mode don')}</h2>
+      <p className="text-sm text-slate-500 mt-0.5 leading-relaxed">
+        {t('Turns the whole shop into a donation: title “Donation”, every price shown as “Donation”, a countdown and “first come, first reserved”. One item only? Tick “Donation” in its listing instead.',
+           'Transforme toute la boutique en don : titre « Don », tous les prix affichés « Don », un compte à rebours et « premier arrivé, premier réservé ». Un seul meuble ? Coche plutôt « Don » dans son annonce.')}
+      </p>
+      {!ready ? (
+        <div className="mt-3 border border-amber-200 bg-amber-50 rounded-xl px-4 py-3 text-sm text-amber-900" role="status">
+          {t(<>Run <code className="bg-white px-1 rounded">don.sql</code> once in Supabase (SQL Editor → New query → Run), then refresh.</>,
+             <>Lance <code className="bg-white px-1 rounded">don.sql</code> une fois dans Supabase (SQL Editor → New query → Run), puis actualise la page.</>)}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <label className="block max-w-xs">
+            <span className="text-sm text-slate-600">{t('Donation until (date and time)', 'Don jusqu’à (date et heure)')}</span>
+            <input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} className={FIELD_SM} />
+          </label>
+          <p className="text-xs text-slate-500">
+            {t('Leave empty for no end. After this time the shop shows your real prices again, by itself.',
+               'Laisse vide pour ne pas fixer de fin. Passé cette heure, la boutique remet toute seule tes vrais prix.')}
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={start} disabled={busy}
+                    className="rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-semibold px-4 py-2 disabled:opacity-50">
+              {live ? t('Update', 'Mettre à jour') : t('Turn on donation mode', 'Activer le mode don')}
+            </button>
+            {live && (
+              <button onClick={stop} disabled={busy}
+                      className="rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold px-4 py-2 disabled:opacity-50">
+                {t('Stop donation mode', 'Arrêter le mode don')}
+              </button>
+            )}
+            {live && <span className="text-sm font-semibold text-green-700">{t('On now', 'Actif en ce moment')}</span>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang, pushToast, onShop }) {
   const t = useT();
   // Les colonnes n'existent qu'après install.sql.
@@ -7549,6 +7718,8 @@ function SettingsPanel({ settings, setSettings, shopLang, adminLang, onAdminLang
         </p>
         <LangPicker value={adminLang} onPick={pickAdmin} label={t('Seller space language', 'Langue de l’espace vendeur')} />
       </section>
+
+      <DonationSection settings={settings} setSettings={setSettings} pushToast={pushToast} />
 
       {saleReady && (
         <section>
