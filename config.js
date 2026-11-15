@@ -12,6 +12,6 @@
 //  names and numbers. NEVER put the service_role key here.
 // =====================================================================
 window.CONFIG = {
-  SUPABASE_URL: 'https://YOUR-PROJECT.supabase.co',
-  SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
+  SUPABASE_URL: 'https://dmjpjbgnghwzciwnciyb.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtanBqYmduZ2h3emNpd25jaXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNjQwMjksImV4cCI6MjEwNDk0MDAyOX0.PHu6YcCQLJTx6T-c_wGdQmnzPb9YoFC80qiZ9bFjDgk',
 };
